@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -11,15 +12,33 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const supabase = createClientComponentClient();
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
-    // Simular login (substituir por Supabase)
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    router.push('/dashboard');
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+
+      router.push('/dashboard');
+      router.refresh();
+    } catch (err: any) {
+      console.error('Erro de login:', err);
+      if (err.message.includes('Invalid login')) {
+        setError('Email ou senha incorretos');
+      } else {
+        setError('Erro ao fazer login. Tente novamente.');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -57,9 +76,6 @@ export default function LoginPage() {
             <label className="block text-sm font-medium text-dark-300">
               Senha
             </label>
-            <Link href="/recuperar-senha" className="text-sm text-accent-purple hover:text-accent-purple/80">
-              Esqueceu a senha?
-            </Link>
           </div>
           <input
             type="password"
@@ -82,8 +98,8 @@ export default function LoginPage() {
 
       <p className="mt-8 text-center text-dark-400">
         Não tem uma conta?{' '}
-        <Link href="/cadastro" className="text-accent-purple hover:text-accent-purple/80 font-medium">
-          Criar conta grátis
+        <Link href="/" className="text-accent-purple hover:text-accent-purple/80 font-medium">
+          Escolha um curso e crie sua conta
         </Link>
       </p>
     </div>
