@@ -31,10 +31,10 @@ export default function EntrarCursoPage() {
 
   if (!curso) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-white mb-4">Curso não encontrado</h1>
-          <Link href="/" className="text-accent-purple hover:underline">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Curso não encontrado</h1>
+          <Link href="/" className="text-blue-600 hover:underline">
             Voltar para a página inicial
           </Link>
         </div>
@@ -50,7 +50,6 @@ export default function EntrarCursoPage() {
 
     try {
       if (modo === 'cadastro') {
-        // Criar conta
         const { data: authData, error: authError } = await supabase.auth.signUp({
           email,
           password: senha,
@@ -64,10 +63,8 @@ export default function EntrarCursoPage() {
         if (authError) throw authError;
 
         if (authData.user) {
-          // Aguardar um pouco para o trigger criar o profile
           await new Promise(resolve => setTimeout(resolve, 1000));
 
-          // Criar inscrição no curso
           const { error: inscricaoError } = await supabase
             .from('inscricoes')
             .insert({
@@ -79,15 +76,14 @@ export default function EntrarCursoPage() {
             console.error('Erro ao criar inscrição:', inscricaoError);
           }
 
-          setSucesso('Conta criada com sucesso! Verifique seu email para confirmar.');
+          setSucesso('Conta criada com sucesso!');
           
-          // Redirecionar após 2 segundos
+          // CORRIGIDO: Redirecionar para dashboard
           setTimeout(() => {
-            router.push(`/plataforma/${slug}`);
-          }, 2000);
+            router.push('/dashboard');
+          }, 1500);
         }
       } else {
-        // Login
         const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
           email,
           password: senha,
@@ -96,7 +92,6 @@ export default function EntrarCursoPage() {
         if (authError) throw authError;
 
         if (authData.user) {
-          // Verificar se já está inscrito no curso
           const { data: inscricao } = await supabase
             .from('inscricoes')
             .select('id')
@@ -104,7 +99,6 @@ export default function EntrarCursoPage() {
             .eq('plataforma', slug)
             .single();
 
-          // Se não está inscrito, criar inscrição
           if (!inscricao) {
             await supabase
               .from('inscricoes')
@@ -114,8 +108,8 @@ export default function EntrarCursoPage() {
               });
           }
 
-          // Redirecionar para o curso
-          router.push(`/plataforma/${slug}`);
+          // CORRIGIDO: Redirecionar para dashboard
+          router.push('/dashboard');
         }
       }
     } catch (error: any) {
@@ -134,22 +128,22 @@ export default function EntrarCursoPage() {
   };
 
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen flex bg-gray-50">
       {/* Lado esquerdo - Formulário */}
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-3 mb-8">
-            <div className="w-10 h-10 bg-gradient-to-br from-accent-purple to-accent-blue rounded-xl flex items-center justify-center">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
               <span className="text-white font-bold text-lg">XY</span>
             </div>
-            <span className="font-display font-bold text-xl text-white">XY Cursos</span>
+            <span className="font-bold text-xl text-gray-900">XY Cursos</span>
           </Link>
 
           {/* Curso Info */}
           <div 
-            className="p-4 rounded-xl mb-8"
-            style={{ backgroundColor: `${curso.cor}15`, borderLeft: `4px solid ${curso.cor}` }}
+            className="p-4 rounded-xl mb-8 bg-white border"
+            style={{ borderLeftWidth: '4px', borderLeftColor: curso.cor }}
           >
             <div className="flex items-center gap-3">
               <span className="text-3xl">{curso.icone}</span>
@@ -157,16 +151,16 @@ export default function EntrarCursoPage() {
                 <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: curso.cor }}>
                   {curso.subtitulo}
                 </div>
-                <div className="text-white font-bold">{curso.nome}</div>
+                <div className="text-gray-900 font-bold">{curso.nome}</div>
               </div>
             </div>
           </div>
 
           {/* Título */}
-          <h1 className="text-2xl font-bold text-white mb-2">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">
             {modo === 'cadastro' ? 'Criar conta' : 'Entrar'}
           </h1>
-          <p className="text-dark-400 mb-8">
+          <p className="text-gray-500 mb-8">
             {modo === 'cadastro' 
               ? 'Crie sua conta para acessar o curso' 
               : 'Entre para continuar seus estudos'}
@@ -174,14 +168,14 @@ export default function EntrarCursoPage() {
 
           {/* Mensagens */}
           {erro && (
-            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl mb-6">
-              <p className="text-red-400 text-sm">{erro}</p>
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl mb-6">
+              <p className="text-red-600 text-sm">{erro}</p>
             </div>
           )}
 
           {sucesso && (
-            <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-xl mb-6">
-              <p className="text-green-400 text-sm">{sucesso}</p>
+            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl mb-6">
+              <p className="text-emerald-600 text-sm">{sucesso}</p>
             </div>
           )}
 
@@ -189,7 +183,7 @@ export default function EntrarCursoPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {modo === 'cadastro' && (
               <div>
-                <label className="block text-sm font-medium text-dark-300 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Nome completo
                 </label>
                 <input
@@ -197,14 +191,14 @@ export default function EntrarCursoPage() {
                   value={nome}
                   onChange={(e) => setNome(e.target.value)}
                   required
-                  className="input w-full"
+                  className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
                   placeholder="Seu nome"
                 />
               </div>
             )}
 
             <div>
-              <label className="block text-sm font-medium text-dark-300 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Email
               </label>
               <input
@@ -212,13 +206,13 @@ export default function EntrarCursoPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="input w-full"
+                className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
                 placeholder="seu@email.com"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-dark-300 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Senha
               </label>
               <input
@@ -227,7 +221,7 @@ export default function EntrarCursoPage() {
                 onChange={(e) => setSenha(e.target.value)}
                 required
                 minLength={6}
-                className="input w-full"
+                className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
                 placeholder="Mínimo 6 caracteres"
               />
             </div>
@@ -249,7 +243,7 @@ export default function EntrarCursoPage() {
           {/* Alternar modo */}
           <div className="mt-6 text-center">
             {modo === 'cadastro' ? (
-              <p className="text-dark-400 text-sm">
+              <p className="text-gray-500 text-sm">
                 Já tem uma conta?{' '}
                 <button 
                   onClick={() => setModo('login')} 
@@ -260,7 +254,7 @@ export default function EntrarCursoPage() {
                 </button>
               </p>
             ) : (
-              <p className="text-dark-400 text-sm">
+              <p className="text-gray-500 text-sm">
                 Não tem conta?{' '}
                 <button 
                   onClick={() => setModo('cadastro')} 
@@ -275,7 +269,7 @@ export default function EntrarCursoPage() {
 
           {/* Voltar */}
           <div className="mt-8 text-center">
-            <Link href="/" className="text-dark-500 text-sm hover:text-dark-300 transition-colors">
+            <Link href="/" className="text-gray-400 text-sm hover:text-gray-600 transition-colors">
               ← Voltar para a página inicial
             </Link>
           </div>
@@ -289,8 +283,8 @@ export default function EntrarCursoPage() {
       >
         <div className="text-center">
           <div className="text-8xl mb-6">{curso.icone}</div>
-          <h2 className="text-3xl font-bold text-white mb-4">{curso.nome}</h2>
-          <p className="text-dark-400 max-w-md">
+          <h2 className="text-3xl font-bold text-gray-900 mb-4">{curso.nome}</h2>
+          <p className="text-gray-500 max-w-md">
             Inscreva-se gratuitamente e comece a estudar agora mesmo.
             Acompanhe seu progresso e conquiste seus objetivos!
           </p>
@@ -303,11 +297,10 @@ export default function EntrarCursoPage() {
             ].map((stat, index) => (
               <div 
                 key={index} 
-                className="p-4 rounded-xl"
-                style={{ backgroundColor: `${curso.cor}15` }}
+                className="p-4 rounded-xl bg-white/50"
               >
-                <div className="text-2xl font-bold text-white">{stat.valor}</div>
-                <div className="text-dark-400 text-sm">{stat.label}</div>
+                <div className="text-2xl font-bold text-gray-900">{stat.valor}</div>
+                <div className="text-gray-500 text-sm">{stat.label}</div>
               </div>
             ))}
           </div>
