@@ -1,179 +1,301 @@
 'use client';
 
-import { useState } from 'react';
-import { cn } from '@/lib/utils';
-import { PLATAFORMAS } from '@/lib/constants/plataformas';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { ArrowLeft, User, Target, Clock, Calendar, Brain, Save, LogOut } from 'lucide-react';
+
+interface Profile {
+  id: string;
+  nome: string;
+  nome_completo: string;
+  email: string;
+  xp_total: number;
+  nivel: number;
+  streak_atual: number;
+  maior_streak: number;
+  meta_pontuacao: number;
+  horas_semana: string;
+  dias_estudo: string[];
+  data_enem: string;
+  nivel_autoavaliado: string;
+}
+
+interface Inscricao {
+  plataforma: string;
+}
+
+const plataformasInfo: Record<string, { nome: string; cor: string; icone: string }> = {
+  enem: { nome: 'XY Matemática ENEM', cor: '#3B82F6', icone: '🎓' },
+  olimpico: { nome: 'XY Olímpico', cor: '#F97316', icone: '🏆' },
+  financeiro: { nome: 'XY Educação Financeira', cor: '#22C55E', icone: '💰' },
+  ifpi: { nome: 'XY Preparatório IFPI', cor: '#A855F7', icone: '🎯' },
+};
+
+const niveisLabel: Record<string, string> = {
+  basico: '🌱 Básico',
+  intermediario: '📚 Intermediário',
+  avancado: '🚀 Avançado',
+  expert: '🏆 Expert',
+};
 
 export default function PerfilPage() {
-  const [activeTab, setActiveTab] = useState<'estatisticas' | 'badges' | 'config'>('estatisticas');
+  const router = useRouter();
+  const supabase = createClientComponentClient();
+  
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [inscricoes, setInscricoes] = useState<Inscricao[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [nome, setNome] = useState('');
+  const [mensagem, setMensagem] = useState('');
 
-  const user = {
-    nome: 'Estudante',
-    email: 'estudante@email.com',
-    xpTotal: 850,
-    nivel: 2,
-    streak: 5,
-    fasesConcluidas: 12,
-    questoesRespondidas: 96,
-    acertos: 78,
+  useEffect(() => {
+    async function fetchData() {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        router.push('/login');
+        return;
+      }
+
+      // Buscar perfil
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (profileData) {
+        setProfile(profileData);
+        setNome(profileData.nome || profileData.nome_completo || '');
+      }
+
+      // Buscar inscrições
+      const { data: inscricoesData } = await supabase
+        .from('inscricoes')
+        .select('plataforma')
+        .eq('user_id', user.id);
+
+      if (inscricoesData) {
+        setInscricoes(inscricoesData);
+      }
+
+      setLoading(false);
+    }
+
+    fetchData();
+  }, [supabase, router]);
+
+  const salvarNome = async () => {
+    if (!profile) return;
+    setSaving(true);
+    
+    const { error } = await supabase
+      .from('profiles')
+      .update({ nome: nome, updated_at: new Date().toISOString() })
+      .eq('id', profile.id);
+
+    if (error) {
+      setMensagem('Erro ao salvar');
+    } else {
+      setMensagem('Salvo com sucesso!');
+      setTimeout(() => setMensagem(''), 3000);
+    }
+    setSaving(false);
   };
 
-  const badges = [
-    { id: 1, nome: 'Primeiro Passo', icone: '🎯', conquistado: true },
-    { id: 2, nome: 'Sequência de 3', icone: '🔥', conquistado: true },
-    { id: 3, nome: 'Primeira Fase', icone: '✅', conquistado: true },
-    { id: 4, nome: 'Sequência de 7', icone: '🔥', conquistado: false },
-    { id: 5, nome: 'Perfeição', icone: '💯', conquistado: false },
-    { id: 6, nome: 'Mestre ENEM', icone: '🎓', conquistado: false },
-  ];
+  const fazerLogout = async () => {
+    await supabase.auth.signOut();
+    router.push('/');
+  };
 
-  const precisao = user.questoesRespondidas > 0 
-    ? Math.round((user.acertos / user.questoesRespondidas) * 100) 
-    : 0;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  const diasAteEnem = profile?.data_enem 
+    ? Math.ceil((new Date(profile.data_enem).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+    : null;
 
   return (
-    <div className="space-y-8 pb-20 lg:pb-8">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="card-hover relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-r from-accent-purple/10 to-accent-blue/10" />
-        
-        <div className="relative flex flex-col sm:flex-row items-center gap-6">
-          <div className="relative">
-            <div className="w-24 h-24 rounded-full bg-accent-purple/20 flex items-center justify-center text-4xl">
-              👤
-            </div>
-            <div className="absolute -bottom-2 -right-2 w-10 h-10 rounded-full bg-accent-purple flex items-center justify-center text-lg">
-              {user.nivel}
-            </div>
-          </div>
-
-          <div className="flex-1 text-center sm:text-left">
-            <h1 className="font-display text-2xl font-bold text-white mb-1">{user.nome}</h1>
-            <p className="text-dark-400 mb-4">{user.email}</p>
-            <div className="flex flex-wrap justify-center sm:justify-start gap-3">
-              <span className="badge bg-accent-purple/20 text-accent-purple">
-                Nível {user.nivel}
-              </span>
-              <span className="badge bg-orange-500/20 text-orange-400">
-                🔥 {user.streak} dias
-              </span>
-            </div>
-          </div>
-
-          <div className="card bg-dark-800/50 p-4 min-w-[160px] text-center">
-            <div className="text-3xl font-bold text-accent-purple">{user.xpTotal}</div>
-            <div className="text-dark-500 text-sm">XP Total</div>
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+        <div className="max-w-2xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <Link href="/dashboard" className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
+              <ArrowLeft className="w-5 h-5" />
+              <span>Voltar</span>
+            </Link>
+            <h1 className="font-bold text-gray-900">Meu Perfil</h1>
+            <div className="w-20"></div>
           </div>
         </div>
-      </div>
+      </header>
 
-      {/* Tabs */}
-      <div className="flex gap-2">
-        {[
-          { id: 'estatisticas', label: 'Estatísticas', icon: '📊' },
-          { id: 'badges', label: 'Badges', icon: '🏅' },
-          { id: 'config', label: 'Configurações', icon: '⚙️' },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as typeof activeTab)}
-            className={cn(
-              'px-4 py-2 rounded-lg font-medium transition-colors text-sm',
-              activeTab === tab.id
-                ? 'bg-accent-purple/20 text-accent-purple'
-                : 'text-dark-400 hover:text-white hover:bg-dark-800'
+      <main className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+        {/* Card do Usuário */}
+        <div className="bg-white rounded-2xl border border-gray-200 p-6">
+          <div className="flex items-center gap-4 mb-6">
+            <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center">
+              <User className="w-10 h-10 text-white" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">{nome || 'Estudante'}</h2>
+              <p className="text-gray-500">{profile?.email}</p>
+              <div className="flex items-center gap-3 mt-2">
+                <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+                  Nível {profile?.nivel || 1}
+                </span>
+                <span className="px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-sm font-medium">
+                  {profile?.xp_total || 0} XP
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Editar Nome */}
+          <div className="border-t border-gray-100 pt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Nome</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+                className="flex-1 px-4 py-2 rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none"
+              />
+              <button
+                onClick={salvarNome}
+                disabled={saving}
+                className="px-4 py-2 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 disabled:opacity-50 flex items-center gap-2"
+              >
+                <Save className="w-4 h-4" />
+                {saving ? 'Salvando...' : 'Salvar'}
+              </button>
+            </div>
+            {mensagem && (
+              <p className="text-emerald-600 text-sm mt-2">{mensagem}</p>
             )}
-          >
-            {tab.icon} {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Estatísticas */}
-      {activeTab === 'estatisticas' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="card-hover text-center">
-              <div className="text-3xl font-bold text-white">{user.fasesConcluidas}</div>
-              <div className="text-dark-400 text-sm">Fases</div>
-            </div>
-            <div className="card-hover text-center">
-              <div className="text-3xl font-bold text-white">{user.questoesRespondidas}</div>
-              <div className="text-dark-400 text-sm">Questões</div>
-            </div>
-            <div className="card-hover text-center">
-              <div className="text-3xl font-bold text-green-500">{precisao}%</div>
-              <div className="text-dark-400 text-sm">Precisão</div>
-            </div>
-            <div className="card-hover text-center">
-              <div className="text-3xl font-bold text-white">{user.streak}</div>
-              <div className="text-dark-400 text-sm">Melhor Streak</div>
-            </div>
           </div>
+        </div>
 
-          <div className="card">
-            <h3 className="font-semibold text-white mb-4">Progresso por Plataforma</h3>
-            <div className="space-y-4">
-              {PLATAFORMAS.map((p) => (
-                <div key={p.slug}>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-dark-300">{p.icone} {p.nome}</span>
-                    <span style={{ color: p.cor }}>15%</span>
-                  </div>
-                  <div className="progress-bar">
-                    <div className="progress-fill" style={{ width: '15%', backgroundColor: p.cor }} />
-                  </div>
+        {/* Minhas Metas */}
+        {profile?.meta_pontuacao && (
+          <div className="bg-white rounded-2xl border border-gray-200 p-6">
+            <h3 className="font-bold text-gray-900 mb-4">Minhas Metas</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-blue-50 rounded-xl p-4">
+                <div className="flex items-center gap-2 text-blue-600 mb-1">
+                  <Target className="w-5 h-5" />
+                  <span className="text-sm font-medium">Meta ENEM</span>
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+                <p className="text-2xl font-bold text-gray-900">{profile.meta_pontuacao}+ pts</p>
+              </div>
 
-      {/* Badges */}
-      {activeTab === 'badges' && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          {badges.map((badge) => (
-            <div 
-              key={badge.id}
-              className={cn('card text-center', !badge.conquistado && 'opacity-50')}
+              {profile.horas_semana && (
+                <div className="bg-emerald-50 rounded-xl p-4">
+                  <div className="flex items-center gap-2 text-emerald-600 mb-1">
+                    <Clock className="w-5 h-5" />
+                    <span className="text-sm font-medium">Tempo/Semana</span>
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900">{profile.horas_semana}</p>
+                </div>
+              )}
+
+              {diasAteEnem && diasAteEnem > 0 && (
+                <div className="bg-amber-50 rounded-xl p-4">
+                  <div className="flex items-center gap-2 text-amber-600 mb-1">
+                    <Calendar className="w-5 h-5" />
+                    <span className="text-sm font-medium">Dias p/ ENEM</span>
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900">{diasAteEnem} dias</p>
+                </div>
+              )}
+
+              {profile.nivel_autoavaliado && (
+                <div className="bg-purple-50 rounded-xl p-4">
+                  <div className="flex items-center gap-2 text-purple-600 mb-1">
+                    <Brain className="w-5 h-5" />
+                    <span className="text-sm font-medium">Meu Nível</span>
+                  </div>
+                  <p className="text-lg font-bold text-gray-900">{niveisLabel[profile.nivel_autoavaliado] || profile.nivel_autoavaliado}</p>
+                </div>
+              )}
+            </div>
+
+            <Link
+              href="/onboarding"
+              className="block text-center text-blue-500 text-sm font-medium mt-4 hover:underline"
             >
-              <div className="text-4xl mb-2">{badge.conquistado ? badge.icone : '🔒'}</div>
-              <h3 className="font-medium text-white text-sm">{badge.nome}</h3>
-              <p className="text-dark-500 text-xs mt-1">
-                {badge.conquistado ? 'Conquistado' : 'Bloqueado'}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
+              Alterar metas →
+            </Link>
+          </div>
+        )}
 
-      {/* Config */}
-      {activeTab === 'config' && (
-        <div className="space-y-6">
-          <div className="card">
-            <h3 className="font-semibold text-white mb-4">Dados da Conta</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm text-dark-400 mb-2">Nome</label>
-                <input type="text" defaultValue={user.nome} className="input" />
-              </div>
-              <div>
-                <label className="block text-sm text-dark-400 mb-2">Email</label>
-                <input type="email" defaultValue={user.email} className="input" disabled />
-              </div>
-              <button className="btn-primary">Salvar</button>
+        {/* Plataformas Inscritas */}
+        <div className="bg-white rounded-2xl border border-gray-200 p-6">
+          <h3 className="font-bold text-gray-900 mb-4">Minhas Plataformas</h3>
+          
+          {inscricoes.length === 0 ? (
+            <p className="text-gray-500 text-center py-4">Nenhuma inscrição encontrada</p>
+          ) : (
+            <div className="space-y-3">
+              {inscricoes.map((inscricao) => {
+                const info = plataformasInfo[inscricao.plataforma];
+                if (!info) return null;
+                
+                return (
+                  <Link
+                    key={inscricao.plataforma}
+                    href={`/plataforma/${inscricao.plataforma}`}
+                    className="flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all"
+                  >
+                    <span className="text-3xl">{info.icone}</span>
+                    <div className="flex-1">
+                      <p className="font-semibold text-gray-900">{info.nome}</p>
+                      <p className="text-sm text-gray-500">Inscrito</p>
+                    </div>
+                    <div 
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: info.cor }}
+                    ></div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Estatísticas */}
+        <div className="bg-white rounded-2xl border border-gray-200 p-6">
+          <h3 className="font-bold text-gray-900 mb-4">Estatísticas</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="text-center p-4 bg-gray-50 rounded-xl">
+              <p className="text-3xl font-bold text-gray-900">{profile?.streak_atual || 0}</p>
+              <p className="text-gray-500 text-sm">Sequência Atual</p>
+            </div>
+            <div className="text-center p-4 bg-gray-50 rounded-xl">
+              <p className="text-3xl font-bold text-gray-900">{profile?.maior_streak || 0}</p>
+              <p className="text-gray-500 text-sm">Maior Sequência</p>
             </div>
           </div>
-
-          <div className="card border-red-500/20">
-            <h3 className="font-semibold text-white mb-4">Zona de Perigo</h3>
-            <button className="btn-secondary text-red-500 border-red-500/20 hover:bg-red-500/10">
-              Excluir Conta
-            </button>
-          </div>
         </div>
-      )}
+
+        {/* Sair */}
+        <button
+          onClick={fazerLogout}
+          className="w-full flex items-center justify-center gap-2 py-4 rounded-xl border-2 border-red-200 text-red-600 font-medium hover:bg-red-50 transition-all"
+        >
+          <LogOut className="w-5 h-5" />
+          Sair da conta
+        </button>
+      </main>
     </div>
   );
 }
