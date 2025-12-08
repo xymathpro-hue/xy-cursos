@@ -1,245 +1,128 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { PLATAFORMAS } from '@/lib/constants/plataformas';
+import { useRouter } from 'next/navigation';
+import { DashboardStats } from '@/components/dashboard/DashboardStats';
+import { BatalhaRapida } from '@/components/batalha/BatalhaRapida';
+import { CadernoErros } from '@/components/caderno/CadernoErros';
+import { DicaDoDia } from '@/components/dicas/DicaDoDia';
+import { LayoutDashboard, Swords, BookX, Lightbulb } from 'lucide-react';
 
-interface Inscricao {
-  plataforma: string;
-  data_inscricao: string;
-}
+type TabType = 'visao-geral' | 'batalha' | 'erros' | 'dicas';
 
-interface UserProfile {
-  nome_completo: string;
-  xp_total: number;
-  nivel: number;
-  streak_dias: number;
-}
+const tabs = [
+  { id: 'visao-geral', nome: 'Visão Geral', icone: LayoutDashboard },
+  { id: 'batalha', nome: 'Batalha Rápida', icone: Swords },
+  { id: 'erros', nome: 'Caderno de Erros', icone: BookX },
+  { id: 'dicas', nome: 'Dicas', icone: Lightbulb }
+];
 
 export default function DashboardPage() {
-  const [user, setUser] = useState<UserProfile | null>(null);
-  const [inscricoes, setInscricoes] = useState<string[]>([]);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string>('');
   const [loading, setLoading] = useState(true);
-  
+  const [tabAtiva, setTabAtiva] = useState<TabType>('visao-geral');
   const supabase = createClientComponentClient();
+  const router = useRouter();
 
   useEffect(() => {
-    async function loadData() {
-      try {
-        // Buscar usuário autenticado
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        
-        if (authUser) {
-          // Buscar perfil
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('nome_completo, xp_total, nivel, streak_dias')
-            .eq('id', authUser.id)
-            .single();
-
-          if (profile) {
-            setUser(profile);
-          }
-
-          // Buscar inscrições
-          const { data: inscricoesData } = await supabase
-            .from('inscricoes')
-            .select('plataforma')
-            .eq('user_id', authUser.id);
-
-          if (inscricoesData) {
-            setInscricoes(inscricoesData.map(i => i.plataforma));
-          }
-        }
-      } catch (error) {
-        console.error('Erro ao carregar dados:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadData();
-  }, [supabase]);
-
-  const cursosInscritos = PLATAFORMAS.filter(p => inscricoes.includes(p.slug));
-  const cursosDisponiveis = PLATAFORMAS.filter(p => !inscricoes.includes(p.slug));
+    const checkUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push('/login'); return; }
+      setUserId(user.id);
+      const { data: profile } = await supabase.from('profiles').select('nome').eq('id', user.id).single();
+      setUserName(profile?.nome || user.email?.split('@')[0] || 'Estudante');
+      setLoading(false);
+    };
+    checkUser();
+  }, [supabase, router]);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-accent-purple border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-dark-400">Carregando...</p>
-        </div>
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
       </div>
     );
   }
 
+  if (!userId) return null;
+
   return (
-    <div className="space-y-8 pb-20 lg:pb-8">
-      {/* Header */}
-      <div>
-        <h1 className="font-display text-2xl sm:text-3xl font-bold text-white mb-2">
-          Olá, {user?.nome_completo?.split(' ')[0] || 'Estudante'}! 👋
-        </h1>
-        <p className="text-dark-400">
-          Continue seus estudos e conquiste seus objetivos.
-        </p>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="stat-card">
-          <div className="text-2xl mb-2">⭐</div>
-          <div className="text-2xl font-bold text-white">{user?.xp_total || 0}</div>
-          <div className="text-dark-400 text-sm">XP Total</div>
-        </div>
-        <div className="stat-card">
-          <div className="text-2xl mb-2">🏅</div>
-          <div className="text-2xl font-bold text-white">Nível {user?.nivel || 1}</div>
-          <div className="text-dark-400 text-sm">Seu nível</div>
-        </div>
-        <div className="stat-card">
-          <div className="text-2xl mb-2">🔥</div>
-          <div className="text-2xl font-bold text-white">{user?.streak_dias || 0} dias</div>
-          <div className="text-dark-400 text-sm">Sequência</div>
-        </div>
-        <div className="stat-card">
-          <div className="text-2xl mb-2">📚</div>
-          <div className="text-2xl font-bold text-white">{cursosInscritos.length}</div>
-          <div className="text-dark-400 text-sm">Cursos ativos</div>
-        </div>
-      </div>
-
-      {/* Meus Cursos */}
-      {cursosInscritos.length > 0 ? (
-        <div>
-          <h2 className="font-display text-xl font-semibold text-white mb-4">
-            Meus Cursos
-          </h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {cursosInscritos.map((plataforma) => (
-              <Link
-                key={plataforma.slug}
-                href={`/plataforma/${plataforma.slug}`}
-                className="card-hover group"
-              >
-                <div className="flex items-start gap-4">
-                  {/* Icon */}
-                  <div 
-                    className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl shrink-0"
-                    style={{ backgroundColor: `${plataforma.cor}20` }}
-                  >
-                    {plataforma.icone}
-                  </div>
-
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div 
-                      className="text-xs font-semibold uppercase tracking-wider mb-1"
-                      style={{ color: plataforma.cor }}
-                    >
-                      {plataforma.subtitulo}
-                    </div>
-                    <h3 className="font-display font-semibold text-white mb-2 truncate">
-                      {plataforma.nome}
-                    </h3>
-                    <p className="text-dark-400 text-sm line-clamp-2">
-                      {plataforma.descricaoCompleta}
-                    </p>
-                  </div>
-
-                  {/* Arrow */}
-                  <div className="text-dark-500 group-hover:text-white transition-colors">
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </div>
-                </div>
-              </Link>
-            ))}
+    <div className="min-h-screen bg-slate-950">
+      <header className="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-xl border-b border-slate-800/50">
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                <span className="text-white font-black text-lg">XY</span>
+              </div>
+              <div>
+                <p className="text-slate-400 text-sm">Olá,</p>
+                <h1 className="text-xl font-bold text-white">{userName}</h1>
+              </div>
+            </div>
+            <div className="px-3 py-1 rounded-full bg-blue-500/20 text-blue-400 text-sm font-medium">🎓 ENEM</div>
           </div>
         </div>
-      ) : (
-        <div className="card-hover p-8 text-center">
-          <div className="text-4xl mb-4">📚</div>
-          <h3 className="text-xl font-bold text-white mb-2">
-            Nenhum curso inscrito
-          </h3>
-          <p className="text-dark-400 mb-6">
-            Você ainda não se inscreveu em nenhum curso. Escolha um abaixo para começar!
-          </p>
-        </div>
-      )}
+      </header>
 
-      {/* Outros Cursos Disponíveis */}
-      {cursosDisponiveis.length > 0 && (
-        <div>
-          <h2 className="font-display text-xl font-semibold text-white mb-4">
-            Outros Cursos Disponíveis
-          </h2>
-          <p className="text-dark-400 text-sm mb-4">
-            Inscreva-se em outros cursos com a mesma conta
-          </p>
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        <div className="flex flex-col lg:flex-row gap-6">
+          <aside className="lg:w-64 shrink-0">
+            <nav className="sticky top-24 space-y-2">
+              {tabs.map((tab) => {
+                const Icon = tab.icone;
+                const isAtiva = tabAtiva === tab.id;
+                return (
+                  <button key={tab.id} onClick={() => setTabAtiva(tab.id as TabType)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${isAtiva ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}>
+                    <Icon className="w-5 h-5" />
+                    <span className="font-medium">{tab.nome}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          </aside>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {cursosDisponiveis.map((plataforma) => (
-              <div
-                key={plataforma.slug}
-                className="card-hover relative overflow-hidden"
-              >
-                <div className="flex items-start gap-4">
-                  {/* Icon */}
-                  <div 
-                    className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl shrink-0 opacity-60"
-                    style={{ backgroundColor: `${plataforma.cor}20` }}
-                  >
-                    {plataforma.icone}
-                  </div>
-
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div 
-                      className="text-xs font-semibold uppercase tracking-wider mb-1 opacity-60"
-                      style={{ color: plataforma.cor }}
-                    >
-                      {plataforma.subtitulo}
+          <main className="flex-1 min-w-0">
+            {tabAtiva === 'visao-geral' && (
+              <div className="space-y-6">
+                <DashboardStats userId={userId} />
+                <div className="grid md:grid-cols-2 gap-6">
+                  <DicaDoDia userId={userId} />
+                  <div className="rounded-2xl bg-slate-800/50 border border-slate-700/50 p-6">
+                    <h3 className="text-lg font-bold text-white mb-4">Ações Rápidas</h3>
+                    <div className="space-y-3">
+                      <button onClick={() => setTabAtiva('batalha')} className="w-full p-4 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium hover:opacity-90 transition-all flex items-center justify-between">
+                        <span className="flex items-center gap-3"><Swords className="w-5 h-5" />Iniciar Batalha Rápida</span><span>→</span>
+                      </button>
+                      <button onClick={() => setTabAtiva('erros')} className="w-full p-4 rounded-xl bg-slate-700/50 text-slate-300 font-medium hover:bg-slate-600/50 transition-all flex items-center justify-between">
+                        <span className="flex items-center gap-3"><BookX className="w-5 h-5" />Revisar Erros</span><span>→</span>
+                      </button>
                     </div>
-                    <h3 className="font-display font-semibold text-white mb-2 truncate">
-                      {plataforma.nome}
-                    </h3>
-                    
-                    <Link
-                      href={`/curso/${plataforma.slug}/entrar`}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition-all hover:opacity-90"
-                      style={{ backgroundColor: plataforma.cor }}
-                    >
-                      Inscrever-se
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                      </svg>
-                    </Link>
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Tip Card */}
-      <div className="card bg-gradient-to-r from-accent-purple/10 to-accent-blue/10 border-accent-purple/20">
-        <div className="flex items-start gap-4">
-          <div className="text-3xl">💡</div>
-          <div>
-            <h3 className="font-medium text-white mb-1">Dica</h3>
-            <p className="text-dark-300 text-sm">
-              Estude um pouco todos os dias para manter sua sequência e fixar o conteúdo. 
-              Apenas 15 minutos diários fazem uma grande diferença!
-            </p>
-          </div>
+            )}
+            {tabAtiva === 'batalha' && (
+              <div>
+                <div className="mb-6"><h2 className="text-2xl font-bold text-white">Batalha Rápida</h2><p className="text-slate-400">Teste seus conhecimentos com questões cronometradas</p></div>
+                <BatalhaRapida userId={userId} />
+              </div>
+            )}
+            {tabAtiva === 'erros' && (
+              <div>
+                <div className="mb-6"><h2 className="text-2xl font-bold text-white">Caderno de Erros</h2><p className="text-slate-400">Revise e domine as questões que você errou</p></div>
+                <CadernoErros userId={userId} />
+              </div>
+            )}
+            {tabAtiva === 'dicas' && (
+              <div>
+                <div className="mb-6"><h2 className="text-2xl font-bold text-white">Dicas de Estudo</h2><p className="text-slate-400">Macetes e estratégias para o ENEM</p></div>
+                <DicaDoDia userId={userId} />
+              </div>
+            )}
+          </main>
         </div>
       </div>
     </div>
