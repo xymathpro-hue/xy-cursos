@@ -155,43 +155,46 @@ export default function ExerciciosPage() {
     if (!userId) return;
     setSalvandoErros(true);
 
-    const erros: { questaoId: string; resposta: string }[] = [];
-    
-    questoes.forEach(q => {
-      const resposta = respostas.find(r => r.questaoId === q.id);
-      if (resposta && resposta.letra !== q.resposta_correta) {
-        erros.push({ questaoId: q.id, resposta: resposta.letra });
+    // Salvar erros no caderno
+    for (const resp of respostas) {
+      const q = questoes.find(quest => quest.id === resp.questaoId);
+      if (q && resp.letra !== q.resposta_correta) {
+        try {
+          await supabase
+            .from('caderno_erros')
+            .upsert({
+              user_id: userId,
+              questao_id: resp.questaoId,
+              resposta_usuario: resp.letra,
+              revisado: false,
+              updated_at: new Date().toISOString()
+            }, {
+              onConflict: 'user_id,questao_id'
+            });
+        } catch (e) {
+          console.error('Erro ao salvar no caderno:', e);
+        }
       }
-    });
-
-    for (const erro of erros) {
-      await supabase
-        .from('caderno_erros')
-        .upsert({
-          user_id: userId,
-          questao_id: erro.questaoId,
-          resposta_usuario: erro.resposta,
-          revisado: false,
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'user_id,questao_id'
-        });
     }
 
-    for (const resposta of respostas) {
-      const q = questoes.find(quest => quest.id === resposta.questaoId);
+    // Salvar todas as respostas
+    for (const resp of respostas) {
+      const q = questoes.find(quest => quest.id === resp.questaoId);
       if (q) {
-        await supabase
-          .from('respostas_usuario')
-          .upsert({
-            user_id: userId,
-            questao_id: resposta.questaoId,
-            resposta: resposta.letra,
-            correta: resposta.letra === q.resposta_correta,
-            updated_at: new Date().toISOString()
-          }, {
-            onConflict: 'user_id,questao_id'
-          });
+        try {
+          await supabase
+            .from('respostas_usuario')
+            .upsert({
+              user_id: userId,
+              questao_id: resp.questaoId,
+              resposta_selecionada: resp.letra,
+              correta: resp.letra === q.resposta_correta
+            }, {
+              onConflict: 'user_id,questao_id'
+            });
+        } catch (e) {
+          console.error('Erro ao salvar resposta:', e);
+        }
       }
     }
 
@@ -259,6 +262,7 @@ export default function ExerciciosPage() {
       </div>
     );
   }
+
   // ==================== TELA DE RESULTADO ====================
   if (finalizado) {
     const { acertos, erros, total } = calcularResultado();
