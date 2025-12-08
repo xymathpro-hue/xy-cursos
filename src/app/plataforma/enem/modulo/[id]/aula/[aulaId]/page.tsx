@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { ArrowLeft, ArrowRight, BookOpen, Lightbulb, Calculator, CheckCircle, Clock, FileText } from 'lucide-react';
+import Script from 'next/script';
 
 interface Aula {
   id: string;
@@ -25,43 +26,6 @@ interface Modulo {
   titulo: string;
 }
 
-// Componente para renderizar LaTeX
-function MathContent({ content }: { content: string }) {
-  useEffect(() => {
-    const renderMath = () => {
-      if (typeof window !== 'undefined' && (window as any).renderMathInElement) {
-        const elements = document.querySelectorAll('.math-content');
-        elements.forEach(el => {
-          (window as any).renderMathInElement(el, {
-            delimiters: [
-              { left: '$$', right: '$$', display: true },
-              { left: '$', right: '$', display: false },
-            ],
-            throwOnError: false
-          });
-        });
-      }
-    };
-    
-    // Tentar renderizar após um pequeno delay
-    const timer1 = setTimeout(renderMath, 100);
-    const timer2 = setTimeout(renderMath, 500);
-    const timer3 = setTimeout(renderMath, 1000);
-    
-    return () => {
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-      clearTimeout(timer3);
-    };
-  }, [content]);
-
-  return (
-    <div className="math-content text-gray-700 leading-loose whitespace-pre-line">
-      {content}
-    </div>
-  );
-}
-
 export default function AulaPage() {
   const params = useParams();
   const router = useRouter();
@@ -76,6 +40,7 @@ export default function AulaPage() {
   const [concluida, setConcluida] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [secaoAtiva, setSecaoAtiva] = useState<'teoria' | 'formulas' | 'dicas' | 'exercicios'>('teoria');
+  const [katexLoaded, setKatexLoaded] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
@@ -100,6 +65,28 @@ export default function AulaPage() {
     if (aulaId && moduloId) fetchData();
   }, [aulaId, moduloId, supabase, router]);
 
+  // Renderizar KaTeX quando carregar
+  const renderKatex = () => {
+    if (typeof window !== 'undefined' && (window as any).renderMathInElement) {
+      const container = document.getElementById('math-container');
+      if (container) {
+        (window as any).renderMathInElement(container, {
+          delimiters: [
+            { left: '$$', right: '$$', display: true },
+            { left: '$', right: '$', display: false },
+          ],
+          throwOnError: false
+        });
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (katexLoaded && aula) {
+      setTimeout(renderKatex, 100);
+    }
+  }, [katexLoaded, secaoAtiva, aula]);
+
   const marcarConcluida = async () => {
     if (!userId || !aulaId) return;
     const { error } = await supabase.from('progresso_aulas').upsert({ user_id: userId, aula_id: aulaId, concluida: true, updated_at: new Date().toISOString() }, { onConflict: 'user_id,aula_id' });
@@ -121,118 +108,131 @@ export default function AulaPage() {
   ].filter(s => s.conteudo);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 py-4">
+    <>
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+      <Script 
+        src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"
+        strategy="afterInteractive"
+      />
+      <Script 
+        src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+        strategy="afterInteractive"
+        onLoad={() => setKatexLoaded(true)}
+      />
+      
+      <div className="min-h-screen bg-gray-50">
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+          <div className="max-w-4xl mx-auto px-4 py-4">
+            <div className="flex items-center justify-between">
+              <Link href={`/plataforma/enem/modulo/${moduloId}`} className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
+                <ArrowLeft className="w-5 h-5" /><span className="hidden sm:inline">Voltar</span>
+              </Link>
+              <div className="text-center">
+                <p className="text-gray-500 text-sm">{modulo.titulo}</p>
+                <p className="font-bold text-gray-900">Aula {aula.numero}: {aula.titulo}</p>
+              </div>
+              <div className="flex items-center gap-2 text-gray-500">
+                <Clock className="w-4 h-4" /><span className="text-sm">{aula.duracao_minutos}min</span>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="max-w-4xl mx-auto px-4 py-6">
+          {concluida && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-6 flex items-center gap-3">
+              <CheckCircle className="w-6 h-6 text-emerald-500" />
+              <p className="text-emerald-700 font-medium">Você já concluiu esta aula!</p>
+            </div>
+          )}
+
+          {secoes.length > 0 && (
+            <div className="flex overflow-x-auto gap-2 mb-6 pb-2">
+              {secoes.map((secao) => {
+                const Icon = secao.icone;
+                return (
+                  <button key={secao.id} onClick={() => setSecaoAtiva(secao.id as any)} className={`flex items-center gap-2 px-4 py-2 rounded-xl whitespace-nowrap font-medium transition-all ${secaoAtiva === secao.id ? 'bg-blue-500 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-blue-300'}`}>
+                    <Icon className="w-4 h-4" />{secao.nome}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div id="math-container" className="bg-white border border-gray-200 rounded-2xl p-6 mb-6">
+            {secaoAtiva === 'teoria' && aula.conteudo_teoria && (
+              <div>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center"><BookOpen className="w-5 h-5 text-blue-600" /></div>
+                  <h2 className="text-xl font-bold text-gray-900">Teoria</h2>
+                </div>
+                <div className="text-gray-700 leading-loose whitespace-pre-line">{aula.conteudo_teoria}</div>
+              </div>
+            )}
+
+            {secaoAtiva === 'formulas' && aula.formulas && (
+              <div>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center"><Calculator className="w-5 h-5 text-purple-600" /></div>
+                  <h2 className="text-xl font-bold text-gray-900">Fórmulas</h2>
+                </div>
+                <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-6 border border-purple-200">
+                  <div className="text-gray-800 text-lg leading-loose whitespace-pre-line">{aula.formulas}</div>
+                </div>
+              </div>
+            )}
+
+            {secaoAtiva === 'dicas' && aula.dicas && (
+              <div>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center"><Lightbulb className="w-5 h-5 text-amber-600" /></div>
+                  <h2 className="text-xl font-bold text-gray-900">Dicas e Macetes</h2>
+                </div>
+                <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-6">
+                  <div className="text-gray-700 leading-loose whitespace-pre-line">{aula.dicas}</div>
+                </div>
+              </div>
+            )}
+
+            {secaoAtiva === 'exercicios' && aula.exercicios_resolvidos && (
+              <div>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center"><FileText className="w-5 h-5 text-emerald-600" /></div>
+                  <h2 className="text-xl font-bold text-gray-900">Exercícios Resolvidos</h2>
+                </div>
+                <div className="text-gray-700 leading-loose whitespace-pre-line">{aula.exercicios_resolvidos}</div>
+              </div>
+            )}
+
+            {secoes.length === 0 && (
+              <div className="text-center py-12"><BookOpen className="w-16 h-16 text-gray-300 mx-auto mb-4" /><p className="text-gray-500">Conteúdo em breve!</p></div>
+            )}
+          </div>
+
+          {!concluida && (
+            <button onClick={marcarConcluida} className="w-full py-4 rounded-xl bg-emerald-500 text-white font-bold hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 mb-6">
+              <CheckCircle className="w-5 h-5" />Marcar aula como concluída
+            </button>
+          )}
+
           <div className="flex items-center justify-between">
-            <Link href={`/plataforma/enem/modulo/${moduloId}`} className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
-              <ArrowLeft className="w-5 h-5" /><span className="hidden sm:inline">Voltar</span>
-            </Link>
-            <div className="text-center">
-              <p className="text-gray-500 text-sm">{modulo.titulo}</p>
-              <p className="font-bold text-gray-900">Aula {aula.numero}: {aula.titulo}</p>
-            </div>
-            <div className="flex items-center gap-2 text-gray-500">
-              <Clock className="w-4 h-4" /><span className="text-sm">{aula.duracao_minutos}min</span>
-            </div>
+            {aulaAnterior ? (
+              <Link href={`/plataforma/enem/modulo/${moduloId}/aula/${aulaAnterior.id}`} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-600 hover:border-blue-300">
+                <ArrowLeft className="w-5 h-5" /><span className="hidden sm:inline">Anterior</span>
+              </Link>
+            ) : <div></div>}
+            {proximaAula ? (
+              <Link href={`/plataforma/enem/modulo/${moduloId}/aula/${proximaAula.id}`} className="flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-500 text-white font-medium hover:bg-blue-600">
+                Próxima<ArrowRight className="w-5 h-5" />
+              </Link>
+            ) : (
+              <Link href={`/plataforma/enem/modulo/${moduloId}`} className="flex items-center gap-2 px-6 py-3 rounded-xl bg-emerald-500 text-white font-medium hover:bg-emerald-600">
+                <CheckCircle className="w-5 h-5" />Voltar ao módulo
+              </Link>
+            )}
           </div>
-        </div>
-      </header>
-
-      <main className="max-w-4xl mx-auto px-4 py-6">
-        {concluida && (
-          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-6 flex items-center gap-3">
-            <CheckCircle className="w-6 h-6 text-emerald-500" />
-            <p className="text-emerald-700 font-medium">Você já concluiu esta aula!</p>
-          </div>
-        )}
-
-        {secoes.length > 0 && (
-          <div className="flex overflow-x-auto gap-2 mb-6 pb-2">
-            {secoes.map((secao) => {
-              const Icon = secao.icone;
-              return (
-                <button key={secao.id} onClick={() => setSecaoAtiva(secao.id as any)} className={`flex items-center gap-2 px-4 py-2 rounded-xl whitespace-nowrap font-medium transition-all ${secaoAtiva === secao.id ? 'bg-blue-500 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-blue-300'}`}>
-                  <Icon className="w-4 h-4" />{secao.nome}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        <div className="bg-white border border-gray-200 rounded-2xl p-6 mb-6">
-          {secaoAtiva === 'teoria' && aula.conteudo_teoria && (
-            <div>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center"><BookOpen className="w-5 h-5 text-blue-600" /></div>
-                <h2 className="text-xl font-bold text-gray-900">Teoria</h2>
-              </div>
-              <MathContent content={aula.conteudo_teoria} />
-            </div>
-          )}
-
-          {secaoAtiva === 'formulas' && aula.formulas && (
-            <div>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center"><Calculator className="w-5 h-5 text-purple-600" /></div>
-                <h2 className="text-xl font-bold text-gray-900">Fórmulas</h2>
-              </div>
-              <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-6 border border-purple-200">
-                <MathContent content={aula.formulas} />
-              </div>
-            </div>
-          )}
-
-          {secaoAtiva === 'dicas' && aula.dicas && (
-            <div>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center"><Lightbulb className="w-5 h-5 text-amber-600" /></div>
-                <h2 className="text-xl font-bold text-gray-900">Dicas e Macetes</h2>
-              </div>
-              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-6">
-                <MathContent content={aula.dicas} />
-              </div>
-            </div>
-          )}
-
-          {secaoAtiva === 'exercicios' && aula.exercicios_resolvidos && (
-            <div>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center"><FileText className="w-5 h-5 text-emerald-600" /></div>
-                <h2 className="text-xl font-bold text-gray-900">Exercícios Resolvidos</h2>
-              </div>
-              <MathContent content={aula.exercicios_resolvidos} />
-            </div>
-          )}
-
-          {secoes.length === 0 && (
-            <div className="text-center py-12"><BookOpen className="w-16 h-16 text-gray-300 mx-auto mb-4" /><p className="text-gray-500">Conteúdo em breve!</p></div>
-          )}
-        </div>
-
-        {!concluida && (
-          <button onClick={marcarConcluida} className="w-full py-4 rounded-xl bg-emerald-500 text-white font-bold hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 mb-6">
-            <CheckCircle className="w-5 h-5" />Marcar aula como concluída
-          </button>
-        )}
-
-        <div className="flex items-center justify-between">
-          {aulaAnterior ? (
-            <Link href={`/plataforma/enem/modulo/${moduloId}/aula/${aulaAnterior.id}`} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-600 hover:border-blue-300">
-              <ArrowLeft className="w-5 h-5" /><span className="hidden sm:inline">Anterior</span>
-            </Link>
-          ) : <div></div>}
-          {proximaAula ? (
-            <Link href={`/plataforma/enem/modulo/${moduloId}/aula/${proximaAula.id}`} className="flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-500 text-white font-medium hover:bg-blue-600">
-              Próxima<ArrowRight className="w-5 h-5" />
-            </Link>
-          ) : (
-            <Link href={`/plataforma/enem/modulo/${moduloId}`} className="flex items-center gap-2 px-6 py-3 rounded-xl bg-emerald-500 text-white font-medium hover:bg-emerald-600">
-              <CheckCircle className="w-5 h-5" />Voltar ao módulo
-            </Link>
-          )}
-        </div>
-      </main>
-    </div>
+        </main>
+      </div>
+    </>
   );
 }
