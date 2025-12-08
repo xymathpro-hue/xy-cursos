@@ -70,7 +70,6 @@ export default function ExerciciosAulaPage() {
       }
       setUserId(user.id);
 
-      // Buscar módulo
       const { data: moduloData } = await supabase
         .from('modulos')
         .select('*')
@@ -79,7 +78,6 @@ export default function ExerciciosAulaPage() {
 
       if (moduloData) setModulo(moduloData);
 
-      // Buscar aula
       const { data: aulaData } = await supabase
         .from('aulas')
         .select('*')
@@ -88,10 +86,8 @@ export default function ExerciciosAulaPage() {
 
       if (aulaData) setAula(aulaData);
 
-      // Buscar questões da aula (primeiro tenta por aula_id, depois por fase)
       let questoesData = null;
       
-      // Tenta buscar questões vinculadas à aula
       const { data: questoesAula } = await supabase
         .from('questoes')
         .select('*')
@@ -102,7 +98,6 @@ export default function ExerciciosAulaPage() {
       if (questoesAula && questoesAula.length > 0) {
         questoesData = questoesAula;
       } else {
-        // Se não tem questões por aula, busca da fase do módulo (temporário)
         const { data: faseData } = await supabase
           .from('fases')
           .select('id')
@@ -116,7 +111,7 @@ export default function ExerciciosAulaPage() {
             .eq('fase_id', faseData.id)
             .eq('ativo', true)
             .order('numero', { ascending: true })
-            .limit(10); // Limita a 10 questões por aula temporariamente
+            .limit(10);
 
           questoesData = questoesFase;
         }
@@ -145,7 +140,6 @@ export default function ExerciciosAulaPage() {
       setAcertos(prev => prev + 1);
     } else {
       setErros(prev => prev + 1);
-      // Registrar erro
       try {
         await supabase.rpc('registrar_erro', {
           p_user_id: userId,
@@ -157,7 +151,6 @@ export default function ExerciciosAulaPage() {
       }
     }
 
-    // Salvar resposta
     try {
       await supabase.from('respostas_usuario').upsert({
         user_id: userId,
@@ -202,9 +195,9 @@ export default function ExerciciosAulaPage() {
 
   const getCorDificuldade = (dif: string) => {
     switch (dif) {
-      case 'facil': return 'bg-emerald-500/20 text-emerald-400';
-      case 'dificil': return 'bg-red-500/20 text-red-400';
-      default: return 'bg-amber-500/20 text-amber-400';
+      case 'facil': return 'bg-emerald-100 text-emerald-700';
+      case 'dificil': return 'bg-red-100 text-red-700';
+      default: return 'bg-amber-100 text-amber-700';
     }
   };
 
@@ -218,7 +211,7 @@ export default function ExerciciosAulaPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
       </div>
     );
@@ -226,63 +219,63 @@ export default function ExerciciosAulaPage() {
 
   if (!aula || !modulo) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center">
-        <p className="text-slate-400 mb-4">Aula não encontrada.</p>
-        <Link href={`/plataforma/enem/modulo/${moduloId}`} className="text-blue-400 hover:underline">Voltar</Link>
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
+        <p className="text-gray-500 mb-4">Aula não encontrada.</p>
+        <Link href={`/plataforma/enem/modulo/${moduloId}`} className="text-blue-600 hover:underline">Voltar</Link>
       </div>
     );
   }
 
   if (questoes.length === 0) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4">
-        <BookOpen className="w-16 h-16 text-slate-600 mb-4" />
-        <p className="text-slate-400 text-center mb-2">Nenhum exercício cadastrado para esta aula.</p>
-        <p className="text-slate-500 text-sm text-center mb-6">Em breve adicionaremos questões específicas!</p>
-        <Link href={`/plataforma/enem/modulo/${moduloId}`} className="text-blue-400 hover:underline">Voltar ao módulo</Link>
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+        <BookOpen className="w-16 h-16 text-gray-300 mb-4" />
+        <p className="text-gray-500 text-center mb-2">Nenhum exercício cadastrado para esta aula.</p>
+        <p className="text-gray-400 text-sm text-center mb-6">Em breve adicionaremos questões!</p>
+        <Link href={`/plataforma/enem/modulo/${moduloId}`} className="text-blue-600 hover:underline">Voltar ao módulo</Link>
       </div>
     );
   }
 
-  // Tela de resultado final
+  // Tela de resultado
   if (finalizado) {
     const percentual = Math.round((acertos / (acertos + erros)) * 100) || 0;
     const medalha = percentual >= 80 ? '🏆' : percentual >= 60 ? '🥈' : percentual >= 40 ? '🥉' : '💪';
 
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="max-w-md w-full">
-          <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-8 text-center">
+          <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center shadow-lg">
             <div className="text-7xl mb-4">{medalha}</div>
-            <h2 className="text-2xl font-black text-white mb-2">Exercícios Concluídos!</h2>
-            <p className="text-blue-100 mb-6">Aula {aula.numero}: {aula.titulo}</p>
+            <h2 className="text-2xl font-black text-gray-900 mb-2">Exercícios Concluídos!</h2>
+            <p className="text-gray-500 mb-6">Aula {aula.numero}: {aula.titulo}</p>
             
             <div className="grid grid-cols-3 gap-4 mb-8">
-              <div className="bg-white/10 rounded-xl p-4">
-                <p className="text-3xl font-bold text-white">{acertos}</p>
-                <p className="text-blue-100 text-sm">Acertos</p>
+              <div className="bg-emerald-50 rounded-xl p-4">
+                <p className="text-3xl font-bold text-emerald-600">{acertos}</p>
+                <p className="text-emerald-600 text-sm">Acertos</p>
               </div>
-              <div className="bg-white/10 rounded-xl p-4">
-                <p className="text-3xl font-bold text-white">{erros}</p>
-                <p className="text-blue-100 text-sm">Erros</p>
+              <div className="bg-red-50 rounded-xl p-4">
+                <p className="text-3xl font-bold text-red-600">{erros}</p>
+                <p className="text-red-600 text-sm">Erros</p>
               </div>
-              <div className="bg-white/10 rounded-xl p-4">
-                <p className="text-3xl font-bold text-white">{percentual}%</p>
-                <p className="text-blue-100 text-sm">Taxa</p>
+              <div className="bg-blue-50 rounded-xl p-4">
+                <p className="text-3xl font-bold text-blue-600">{percentual}%</p>
+                <p className="text-blue-600 text-sm">Taxa</p>
               </div>
             </div>
 
             <div className="space-y-3">
               <button
                 onClick={handleReiniciar}
-                className="w-full py-3 rounded-xl bg-white/20 text-white font-medium hover:bg-white/30 flex items-center justify-center gap-2"
+                className="w-full py-3 rounded-xl bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 flex items-center justify-center gap-2"
               >
                 <RotateCcw className="w-5 h-5" />
                 Refazer Exercícios
               </button>
               <Link
                 href={`/plataforma/enem/modulo/${moduloId}`}
-                className="w-full py-3 rounded-xl bg-white text-blue-600 font-bold hover:bg-blue-50 flex items-center justify-center gap-2"
+                className="w-full py-3 rounded-xl bg-blue-500 text-white font-bold hover:bg-blue-600 flex items-center justify-center gap-2"
               >
                 <Trophy className="w-5 h-5" />
                 Voltar ao Módulo
@@ -304,27 +297,27 @@ export default function ExerciciosAulaPage() {
   ].filter(a => a.texto);
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-slate-900/80 backdrop-blur-xl border-b border-slate-800/50 sticky top-0 z-10">
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
-            <Link href={`/plataforma/enem/modulo/${moduloId}`} className="flex items-center gap-2 text-slate-400 hover:text-white">
+            <Link href={`/plataforma/enem/modulo/${moduloId}`} className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
               <ArrowLeft className="w-5 h-5" />
               <span className="hidden sm:inline">Voltar</span>
             </Link>
             
             <div className="text-center">
-              <p className="text-sm text-slate-500">Aula {aula.numero}: {aula.titulo}</p>
-              <p className="font-semibold text-white">Exercícios</p>
+              <p className="text-sm text-gray-500">Aula {aula.numero}: {aula.titulo}</p>
+              <p className="font-semibold text-gray-900">Exercícios</p>
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1 text-emerald-400">
+              <div className="flex items-center gap-1 text-emerald-600">
                 <CheckCircle className="w-4 h-4" />
                 <span className="font-medium">{acertos}</span>
               </div>
-              <div className="flex items-center gap-1 text-red-400">
+              <div className="flex items-center gap-1 text-red-600">
                 <XCircle className="w-4 h-4" />
                 <span className="font-medium">{erros}</span>
               </div>
@@ -333,13 +326,13 @@ export default function ExerciciosAulaPage() {
 
           {/* Barra de progresso */}
           <div className="mt-3">
-            <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
+            <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
               <span>Questão {questaoAtual + 1} de {questoes.length}</span>
               <span>{Math.round(progresso)}%</span>
             </div>
-            <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+            <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
               <div 
-                className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-300"
+                className="h-full bg-blue-500 transition-all duration-300"
                 style={{ width: `${progresso}%` }}
               ></div>
             </div>
@@ -349,18 +342,18 @@ export default function ExerciciosAulaPage() {
 
       <main className="max-w-4xl mx-auto px-4 py-6">
         {/* Card da questão */}
-        <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-hidden">
+        <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
           {/* Tags */}
-          <div className="px-6 py-4 bg-slate-800/50 border-b border-slate-700/50 flex items-center justify-between">
+          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
             <span className={`px-3 py-1 rounded-full text-xs font-medium ${getCorDificuldade(questao.dificuldade)}`}>
               {getNomeDificuldade(questao.dificuldade)}
             </span>
-            <span className="text-sm text-slate-500">Questão {questao.numero}</span>
+            <span className="text-sm text-gray-500">Questão {questao.numero}</span>
           </div>
 
           {/* Enunciado */}
           <div className="p-6">
-            <p className="text-slate-200 text-lg leading-relaxed whitespace-pre-line">
+            <p className="text-gray-800 text-lg leading-relaxed whitespace-pre-line">
               {questao.enunciado}
             </p>
           </div>
@@ -372,12 +365,12 @@ export default function ExerciciosAulaPage() {
               const isCorreta = questao.resposta_correta === letra;
               const isErrada = respondida && isSelected && !isCorreta;
 
-              let classes = 'border-slate-700/50 bg-slate-800/30 hover:bg-slate-700/50';
+              let classes = 'border-gray-200 bg-gray-50 hover:bg-gray-100';
               if (respondida) {
-                if (isCorreta) classes = 'border-emerald-500 bg-emerald-500/20';
-                else if (isErrada) classes = 'border-red-500 bg-red-500/20';
+                if (isCorreta) classes = 'border-emerald-500 bg-emerald-50';
+                else if (isErrada) classes = 'border-red-500 bg-red-50';
               } else if (isSelected) {
-                classes = 'border-blue-500 bg-blue-500/20';
+                classes = 'border-blue-500 bg-blue-50';
               }
 
               return (
@@ -395,12 +388,12 @@ export default function ExerciciosAulaPage() {
                           ? 'bg-red-500 text-white'
                           : isSelected 
                             ? 'bg-blue-500 text-white' 
-                            : 'bg-slate-700/50 text-slate-400'
+                            : 'bg-gray-200 text-gray-600'
                     }`}>
                       {respondida && isCorreta ? <CheckCircle className="w-5 h-5" /> : 
                        respondida && isErrada ? <XCircle className="w-5 h-5" /> : letra}
                     </span>
-                    <span className="text-slate-300 pt-0.5">{texto}</span>
+                    <span className="text-gray-700 pt-0.5">{texto}</span>
                   </div>
                 </button>
               );
@@ -415,8 +408,8 @@ export default function ExerciciosAulaPage() {
                 disabled={!respostaSelecionada}
                 className={`w-full py-4 rounded-xl font-bold text-white transition-all ${
                   respostaSelecionada 
-                    ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:opacity-90' 
-                    : 'bg-slate-700/50 text-slate-500 cursor-not-allowed'
+                    ? 'bg-blue-500 hover:bg-blue-600' 
+                    : 'bg-gray-300 cursor-not-allowed'
                 }`}
               >
                 Confirmar Resposta
@@ -426,21 +419,21 @@ export default function ExerciciosAulaPage() {
 
           {/* Feedback */}
           {respondida && (
-            <div className={`px-6 py-4 ${respostaSelecionada === questao.resposta_correta ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}>
+            <div className={`px-6 py-4 ${respostaSelecionada === questao.resposta_correta ? 'bg-emerald-50' : 'bg-red-50'}`}>
               <div className="flex items-center gap-3">
                 {respostaSelecionada === questao.resposta_correta ? (
                   <>
-                    <CheckCircle className="w-8 h-8 text-emerald-400" />
+                    <CheckCircle className="w-8 h-8 text-emerald-500" />
                     <div>
-                      <p className="font-bold text-emerald-400">Parabéns! Você acertou! 🎉</p>
+                      <p className="font-bold text-emerald-700">Parabéns! Você acertou! 🎉</p>
                     </div>
                   </>
                 ) : (
                   <>
-                    <XCircle className="w-8 h-8 text-red-400" />
+                    <XCircle className="w-8 h-8 text-red-500" />
                     <div>
-                      <p className="font-bold text-red-400">Resposta incorreta</p>
-                      <p className="text-red-300 text-sm">A correta é: {questao.resposta_correta}</p>
+                      <p className="font-bold text-red-700">Resposta incorreta</p>
+                      <p className="text-red-600 text-sm">A correta é: {questao.resposta_correta}</p>
                     </div>
                   </>
                 )}
@@ -450,18 +443,18 @@ export default function ExerciciosAulaPage() {
 
           {/* Resolução */}
           {respondida && questao.explicacao && (
-            <div className="px-6 py-4 border-t border-slate-700/50">
+            <div className="px-6 py-4 border-t border-gray-200">
               <button
                 onClick={() => setMostrarResolucao(!mostrarResolucao)}
-                className="flex items-center gap-2 text-blue-400 hover:text-blue-300 font-medium"
+                className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium"
               >
                 <Lightbulb className="w-5 h-5" />
                 {mostrarResolucao ? 'Ocultar resolução' : 'Ver resolução'}
               </button>
               
               {mostrarResolucao && (
-                <div className="mt-4 p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl">
-                  <div className="text-slate-300 whitespace-pre-line">
+                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                  <div className="text-gray-700 whitespace-pre-line">
                     {questao.explicacao}
                   </div>
                 </div>
@@ -477,8 +470,8 @@ export default function ExerciciosAulaPage() {
             disabled={questaoAtual === 0}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl ${
               questaoAtual === 0 
-                ? 'text-slate-600 cursor-not-allowed' 
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                ? 'text-gray-300 cursor-not-allowed' 
+                : 'text-gray-600 hover:bg-gray-200'
             }`}
           >
             <ArrowLeft className="w-5 h-5" />
@@ -488,7 +481,7 @@ export default function ExerciciosAulaPage() {
           {respondida && (
             <button
               onClick={handleProximaQuestao}
-              className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold bg-blue-600 text-white hover:bg-blue-700"
+              className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold bg-blue-500 text-white hover:bg-blue-600"
             >
               {questaoAtual < questoes.length - 1 ? 'Próxima' : 'Finalizar'}
               <ArrowRight className="w-5 h-5" />
