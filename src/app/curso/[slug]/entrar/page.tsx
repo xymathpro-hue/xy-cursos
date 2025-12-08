@@ -42,6 +42,20 @@ export default function EntrarCursoPage() {
     );
   }
 
+  const verificarOnboardingERedirecionar = async (userId: string) => {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('onboarding_completo')
+      .eq('id', userId)
+      .single();
+
+    if (profile?.onboarding_completo) {
+      router.push('/dashboard');
+    } else {
+      router.push('/onboarding');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -78,9 +92,9 @@ export default function EntrarCursoPage() {
 
           setSucesso('Conta criada com sucesso!');
           
-          // CORRIGIDO: Redirecionar para dashboard
+          // Novo usuário sempre vai para onboarding
           setTimeout(() => {
-            router.push('/dashboard');
+            router.push('/onboarding');
           }, 1500);
         }
       } else {
@@ -108,8 +122,8 @@ export default function EntrarCursoPage() {
               });
           }
 
-          // CORRIGIDO: Redirecionar para dashboard
-          router.push('/dashboard');
+          // Verificar se completou onboarding
+          await verificarOnboardingERedirecionar(authData.user.id);
         }
       }
     } catch (error: any) {
