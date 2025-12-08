@@ -13,9 +13,12 @@ import {
   Swords,
   ChevronRight,
   TrendingUp,
-  CheckCircle,
-  Clock,
-  Settings
+  Settings,
+  BookX,
+  ClipboardCheck,
+  Calendar,
+  Award,
+  BarChart3
 } from 'lucide-react';
 
 interface Profile {
@@ -25,6 +28,8 @@ interface Profile {
   streak_atual: number;
   maior_streak: number;
   onboarding_completo: boolean;
+  meta_pontuacao: number;
+  data_enem: string;
 }
 
 interface Modulo {
@@ -49,7 +54,8 @@ export default function DashboardPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [modulos, setModulos] = useState<Modulo[]>([]);
   const [progressoModulos, setProgressoModulos] = useState<{[key: string]: ProgressoModulo}>({});
-  const [stats, setStats] = useState({ questoes: 0, acertos: 0, taxa: 0 });
+  const [stats, setStats] = useState({ questoes: 0, acertos: 0, erros: 0, taxa: 0 });
+  const [errosCount, setErrosCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -70,11 +76,6 @@ export default function DashboardPage() {
 
       if (profileData) {
         setProfile(profileData);
-        // Se não completou onboarding, redirecionar
-        // if (!profileData.onboarding_completo) {
-        //   router.push('/onboarding');
-        //   return;
-        // }
       }
 
       // Buscar módulos ENEM
@@ -87,11 +88,19 @@ export default function DashboardPage() {
 
       if (modulosData) setModulos(modulosData);
 
+      // Buscar erros no caderno
+      const { count: errosData } = await supabase
+        .from('caderno_erros')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('revisado', false);
+
+      setErrosCount(errosData || 0);
+
       // Buscar progresso de cada módulo
       const progressoTemp: {[key: string]: ProgressoModulo} = {};
       
       for (const modulo of modulosData || []) {
-        // Buscar aulas do módulo
         const { data: aulasData } = await supabase
           .from('aulas')
           .select('id')
@@ -99,7 +108,6 @@ export default function DashboardPage() {
         
         const totalAulas = aulasData?.length || 0;
 
-        // Buscar aulas concluídas
         const { data: progressoAulas } = await supabase
           .from('progresso_aulas')
           .select('aula_id')
@@ -109,7 +117,6 @@ export default function DashboardPage() {
 
         const aulasConcluidas = progressoAulas?.length || 0;
 
-        // Buscar questões respondidas
         const { data: faseData } = await supabase
           .from('fases')
           .select('id')
@@ -122,9 +129,8 @@ export default function DashboardPage() {
         if (faseData) {
           const { data: respostasData } = await supabase
             .from('respostas_usuario')
-            .select('correta, questoes!inner(fase_id)')
-            .eq('user_id', user.id)
-            .eq('questoes.fase_id', faseData.id);
+            .select('correta')
+            .eq('user_id', user.id);
 
           questoesRespondidas = respostasData?.length || 0;
           questoesCorretas = respostasData?.filter(r => r.correta).length || 0;
@@ -142,11 +148,19 @@ export default function DashboardPage() {
       setProgressoModulos(progressoTemp);
 
       // Calcular estatísticas gerais
-      const totalQuestoes = Object.values(progressoTemp).reduce((acc, p) => acc + p.questoes_respondidas, 0);
-      const totalAcertos = Object.values(progressoTemp).reduce((acc, p) => acc + p.questoes_corretas, 0);
+      const { data: todasRespostas } = await supabase
+        .from('respostas_usuario')
+        .select('correta')
+        .eq('user_id', user.id);
+
+      const totalQuestoes = todasRespostas?.length || 0;
+      const totalAcertos = todasRespostas?.filter(r => r.correta).length || 0;
+      const totalErros = totalQuestoes - totalAcertos;
+
       setStats({
         questoes: totalQuestoes,
         acertos: totalAcertos,
+        erros: totalErros,
         taxa: totalQuestoes > 0 ? Math.round((totalAcertos / totalQuestoes) * 100) : 0
       });
 
@@ -168,6 +182,11 @@ export default function DashboardPage() {
   const xpAtual = profile?.xp_total || 0;
   const progressoXP = (xpAtual % xpParaProximoNivel) / xpParaProximoNivel * 100;
 
+  // Calcular dias até o ENEM
+  const diasAteEnem = profile?.data_enem 
+    ? Math.ceil((new Date(profile.data_enem).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -184,7 +203,7 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <Link href="/perfil" className="p-2 text-gray-500 hover:text-gray-700">
+              <Link href="/perfil" className="p-2 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100">
                 <Settings className="w-5 h-5" />
               </Link>
             </div>
@@ -193,10 +212,10 @@ export default function DashboardPage() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-6">
-        {/* Card de Status */}
+        {/* Card de Status Principal */}
         <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-6 mb-6 text-white">
           <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-6">
               {/* Streak */}
               <div className="flex items-center gap-2">
                 <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
@@ -207,6 +226,32 @@ export default function DashboardPage() {
                   <p className="text-blue-100 text-sm">dias seguidos</p>
                 </div>
               </div>
+
+              {/* Meta ENEM */}
+              {profile?.meta_pontuacao && (
+                <div className="hidden sm:flex items-center gap-2">
+                  <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                    <Target className="w-6 h-6 text-emerald-300" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-black">{profile.meta_pontuacao}+</p>
+                    <p className="text-blue-100 text-sm">meta TRI</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Dias até ENEM */}
+              {diasAteEnem && diasAteEnem > 0 && (
+                <div className="hidden md:flex items-center gap-2">
+                  <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                    <Calendar className="w-6 h-6 text-yellow-300" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-black">{diasAteEnem}</p>
+                    <p className="text-blue-100 text-sm">dias p/ ENEM</p>
+                  </div>
+                </div>
+              )}
             </div>
             
             {/* Nível e XP */}
@@ -229,8 +274,8 @@ export default function DashboardPage() {
           <p className="text-blue-100 text-xs mt-1 text-right">{Math.round(progressoXP)}% para Nível {(profile?.nivel || 1) + 1}</p>
         </div>
 
-        {/* Estatísticas Rápidas */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
+        {/* Estatísticas Detalhadas */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
             <Target className="w-6 h-6 text-blue-500 mx-auto mb-2" />
             <p className="text-2xl font-bold text-gray-900">{stats.questoes}</p>
@@ -242,10 +287,84 @@ export default function DashboardPage() {
             <p className="text-gray-500 text-sm">Acertos</p>
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+            <BookX className="w-6 h-6 text-red-500 mx-auto mb-2" />
+            <p className="text-2xl font-bold text-gray-900">{stats.erros}</p>
+            <p className="text-gray-500 text-sm">Erros</p>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
             <TrendingUp className="w-6 h-6 text-amber-500 mx-auto mb-2" />
             <p className="text-2xl font-bold text-gray-900">{stats.taxa}%</p>
             <p className="text-gray-500 text-sm">Taxa</p>
           </div>
+        </div>
+
+        {/* Ações Rápidas */}
+        <h2 className="text-xl font-bold text-gray-900 mb-4">Ações Rápidas</h2>
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <Link
+            href="/plataforma/enem"
+            className="bg-white border-2 border-blue-200 rounded-xl p-4 hover:border-blue-400 hover:shadow-md transition-all"
+          >
+            <div className="flex flex-col items-center text-center gap-3">
+              <div className="w-14 h-14 bg-blue-500 rounded-xl flex items-center justify-center">
+                <BookOpen className="w-7 h-7 text-white" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900">Continuar Estudando</h3>
+                <p className="text-gray-500 text-sm">Retome de onde parou</p>
+              </div>
+            </div>
+          </Link>
+
+          <Link
+            href="/batalha"
+            className="bg-white border-2 border-amber-200 rounded-xl p-4 hover:border-amber-400 hover:shadow-md transition-all"
+          >
+            <div className="flex flex-col items-center text-center gap-3">
+              <div className="w-14 h-14 bg-gradient-to-br from-amber-400 to-orange-500 rounded-xl flex items-center justify-center">
+                <Swords className="w-7 h-7 text-white" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900">Batalha Rápida</h3>
+                <p className="text-gray-500 text-sm">5 questões cronometradas</p>
+              </div>
+            </div>
+          </Link>
+
+          <Link
+            href="/caderno-erros"
+            className="bg-white border-2 border-red-200 rounded-xl p-4 hover:border-red-400 hover:shadow-md transition-all relative"
+          >
+            <div className="flex flex-col items-center text-center gap-3">
+              <div className="w-14 h-14 bg-gradient-to-br from-red-400 to-rose-500 rounded-xl flex items-center justify-center relative">
+                <BookX className="w-7 h-7 text-white" />
+                {errosCount > 0 && (
+                  <span className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                    {errosCount}
+                  </span>
+                )}
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900">Caderno de Erros</h3>
+                <p className="text-gray-500 text-sm">{errosCount} para revisar</p>
+              </div>
+            </div>
+          </Link>
+
+          <Link
+            href="/diagnostico"
+            className="bg-white border-2 border-purple-200 rounded-xl p-4 hover:border-purple-400 hover:shadow-md transition-all"
+          >
+            <div className="flex flex-col items-center text-center gap-3">
+              <div className="w-14 h-14 bg-gradient-to-br from-purple-400 to-indigo-500 rounded-xl flex items-center justify-center">
+                <ClipboardCheck className="w-7 h-7 text-white" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900">Diagnóstico</h3>
+                <p className="text-gray-500 text-sm">Descubra seu nível</p>
+              </div>
+            </div>
+          </Link>
         </div>
 
         {/* Módulos */}
@@ -281,7 +400,9 @@ export default function DashboardPage() {
                       <div className="flex items-center gap-2">
                         <span className="text-gray-400 text-sm">Módulo {modulo.numero}</span>
                         {aulasPercent === 100 && (
-                          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full">Completo</span>
+                          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full flex items-center gap-1">
+                            <Award className="w-3 h-3" /> Completo
+                          </span>
                         )}
                       </div>
                       <h3 className="font-semibold text-gray-900 truncate">{modulo.titulo}</h3>
@@ -305,40 +426,30 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Ações Rápidas */}
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Ações Rápidas</h2>
-        <div className="grid md:grid-cols-2 gap-4">
-          <Link
-            href="/plataforma/enem"
-            className="bg-white border-2 border-blue-200 rounded-xl p-5 hover:border-blue-400 hover:shadow-md transition-all"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-blue-500 rounded-xl flex items-center justify-center">
-                <BookOpen className="w-6 h-6 text-white" />
-              </div>
-              <div className="flex-1">
-                <h3 className="font-bold text-gray-900">Continuar Estudando</h3>
-                <p className="text-gray-500 text-sm">ENEM - Matemática</p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-            </div>
-          </Link>
-
-          <Link
-            href="/plataforma/enem"
-            className="bg-white border-2 border-amber-200 rounded-xl p-5 hover:border-amber-400 hover:shadow-md transition-all"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-gradient-to-br from-amber-400 to-orange-500 rounded-xl flex items-center justify-center">
-                <Swords className="w-6 h-6 text-white" />
-              </div>
-              <div className="flex-1">
-                <h3 className="font-bold text-gray-900">Batalha Rápida</h3>
-                <p className="text-gray-500 text-sm">5 questões cronometradas</p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-            </div>
-          </Link>
+        {/* Desempenho por Módulo (resumo) */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h3 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
+            <BarChart3 className="w-5 h-5 text-blue-500" />
+            Seu Desempenho
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            {modulos.slice(0, 5).map((modulo) => {
+              const progresso = progressoModulos[modulo.id];
+              const taxa = progresso?.questoes_respondidas > 0 
+                ? Math.round((progresso.questoes_corretas / progresso.questoes_respondidas) * 100) 
+                : 0;
+              
+              return (
+                <div key={modulo.id} className="text-center p-3 bg-gray-50 rounded-xl">
+                  <div className="text-2xl mb-1">{modulo.icone || '📚'}</div>
+                  <p className="text-xs text-gray-500 truncate">{modulo.titulo}</p>
+                  <p className={`text-lg font-bold ${taxa >= 70 ? 'text-emerald-600' : taxa >= 50 ? 'text-amber-600' : 'text-gray-400'}`}>
+                    {progresso?.questoes_respondidas > 0 ? `${taxa}%` : '-'}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </main>
     </div>
