@@ -25,6 +25,43 @@ interface Modulo {
   titulo: string;
 }
 
+// Componente para renderizar LaTeX
+function MathContent({ content }: { content: string }) {
+  useEffect(() => {
+    const renderMath = () => {
+      if (typeof window !== 'undefined' && (window as any).renderMathInElement) {
+        const elements = document.querySelectorAll('.math-content');
+        elements.forEach(el => {
+          (window as any).renderMathInElement(el, {
+            delimiters: [
+              { left: '$$', right: '$$', display: true },
+              { left: '$', right: '$', display: false },
+            ],
+            throwOnError: false
+          });
+        });
+      }
+    };
+    
+    // Tentar renderizar após um pequeno delay
+    const timer1 = setTimeout(renderMath, 100);
+    const timer2 = setTimeout(renderMath, 500);
+    const timer3 = setTimeout(renderMath, 1000);
+    
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      clearTimeout(timer3);
+    };
+  }, [content]);
+
+  return (
+    <div className="math-content text-gray-700 leading-loose whitespace-pre-line">
+      {content}
+    </div>
+  );
+}
+
 export default function AulaPage() {
   const params = useParams();
   const router = useRouter();
@@ -62,28 +99,6 @@ export default function AulaPage() {
     }
     if (aulaId && moduloId) fetchData();
   }, [aulaId, moduloId, supabase, router]);
-
-  // Renderizar KaTeX
-  useEffect(() => {
-    if (typeof window !== 'undefined' && aula) {
-      const timer = setTimeout(() => {
-        const renderMath = (window as any).renderMathInElement;
-        if (renderMath) {
-          const container = document.getElementById('conteudo-aula');
-          if (container) {
-            renderMath(container, {
-              delimiters: [
-                { left: '$$', right: '$$', display: true },
-                { left: '$', right: '$', display: false },
-              ],
-              throwOnError: false
-            });
-          }
-        }
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [secaoAtiva, aula]);
 
   const marcarConcluida = async () => {
     if (!userId || !aulaId) return;
@@ -145,14 +160,14 @@ export default function AulaPage() {
           </div>
         )}
 
-        <div id="conteudo-aula" className="bg-white border border-gray-200 rounded-2xl p-6 mb-6">
+        <div className="bg-white border border-gray-200 rounded-2xl p-6 mb-6">
           {secaoAtiva === 'teoria' && aula.conteudo_teoria && (
             <div>
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center"><BookOpen className="w-5 h-5 text-blue-600" /></div>
                 <h2 className="text-xl font-bold text-gray-900">Teoria</h2>
               </div>
-              <div className="text-gray-700 whitespace-pre-line leading-relaxed">{aula.conteudo_teoria}</div>
+              <MathContent content={aula.conteudo_teoria} />
             </div>
           )}
 
@@ -163,7 +178,7 @@ export default function AulaPage() {
                 <h2 className="text-xl font-bold text-gray-900">Fórmulas</h2>
               </div>
               <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-6 border border-purple-200">
-                <div className="text-gray-800 text-lg leading-loose whitespace-pre-line">{aula.formulas}</div>
+                <MathContent content={aula.formulas} />
               </div>
             </div>
           )}
@@ -175,7 +190,7 @@ export default function AulaPage() {
                 <h2 className="text-xl font-bold text-gray-900">Dicas e Macetes</h2>
               </div>
               <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-6">
-                <div className="text-gray-700 whitespace-pre-line leading-relaxed">{aula.dicas}</div>
+                <MathContent content={aula.dicas} />
               </div>
             </div>
           )}
@@ -186,7 +201,7 @@ export default function AulaPage() {
                 <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center"><FileText className="w-5 h-5 text-emerald-600" /></div>
                 <h2 className="text-xl font-bold text-gray-900">Exercícios Resolvidos</h2>
               </div>
-              <div className="text-gray-700 whitespace-pre-line leading-relaxed">{aula.exercicios_resolvidos}</div>
+              <MathContent content={aula.exercicios_resolvidos} />
             </div>
           )}
 
