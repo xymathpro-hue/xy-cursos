@@ -1,16 +1,10 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { ArrowLeft, ArrowRight, BookOpen, Lightbulb, Calculator, CheckCircle, Clock, FileText } from 'lucide-react';
-
-declare global {
-  interface Window {
-    renderMathInElement?: (element: HTMLElement, options?: any) => void;
-  }
-}
 
 interface Aula {
   id: string;
@@ -37,7 +31,6 @@ export default function AulaPage() {
   const moduloId = params.id as string;
   const aulaId = params.aulaId as string;
   const supabase = createClientComponentClient();
-  const contentRef = useRef<HTMLDivElement>(null);
 
   const [aula, setAula] = useState<Aula | null>(null);
   const [modulo, setModulo] = useState<Modulo | null>(null);
@@ -70,18 +63,25 @@ export default function AulaPage() {
     if (aulaId && moduloId) fetchData();
   }, [aulaId, moduloId, supabase, router]);
 
-  // Renderizar LaTeX quando o conteúdo mudar
+  // Renderizar KaTeX
   useEffect(() => {
-    if (contentRef.current && window.renderMathInElement) {
-      window.renderMathInElement(contentRef.current, {
-        delimiters: [
-          { left: '$$', right: '$$', display: true },
-          { left: '$', right: '$', display: false },
-          { left: '\\[', right: '\\]', display: true },
-          { left: '\\(', right: '\\)', display: false }
-        ],
-        throwOnError: false
-      });
+    if (typeof window !== 'undefined' && aula) {
+      const timer = setTimeout(() => {
+        const renderMath = (window as any).renderMathInElement;
+        if (renderMath) {
+          const container = document.getElementById('conteudo-aula');
+          if (container) {
+            renderMath(container, {
+              delimiters: [
+                { left: '$$', right: '$$', display: true },
+                { left: '$', right: '$', display: false },
+              ],
+              throwOnError: false
+            });
+          }
+        }
+      }, 500);
+      return () => clearTimeout(timer);
     }
   }, [secaoAtiva, aula]);
 
@@ -145,7 +145,7 @@ export default function AulaPage() {
           </div>
         )}
 
-        <div ref={contentRef} className="bg-white border border-gray-200 rounded-2xl p-6 mb-6">
+        <div id="conteudo-aula" className="bg-white border border-gray-200 rounded-2xl p-6 mb-6">
           {secaoAtiva === 'teoria' && aula.conteudo_teoria && (
             <div>
               <div className="flex items-center gap-3 mb-4">
@@ -162,10 +162,8 @@ export default function AulaPage() {
                 <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center"><Calculator className="w-5 h-5 text-purple-600" /></div>
                 <h2 className="text-xl font-bold text-gray-900">Fórmulas</h2>
               </div>
-              <div className="space-y-4">
-                <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-6 border border-purple-200">
-                  <div className="text-gray-800 text-lg leading-relaxed whitespace-pre-line">{aula.formulas}</div>
-                </div>
+              <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-6 border border-purple-200">
+                <div className="text-gray-800 text-lg leading-loose whitespace-pre-line">{aula.formulas}</div>
               </div>
             </div>
           )}
