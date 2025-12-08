@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { ArrowLeft, BookOpen, FileText, CheckCircle, Lock, Clock, Play, ChevronRight } from 'lucide-react';
+import { ArrowLeft, BookOpen, FileText, CheckCircle, Clock, Play, ChevronRight, Trophy, Lock, Target } from 'lucide-react';
 
 interface Aula {
   id: string;
@@ -22,6 +22,14 @@ interface Modulo {
   descricao: string;
 }
 
+interface SimuladoModulo {
+  id: string;
+  titulo: string;
+  total_questoes: number;
+  tempo_minutos: number;
+  percentual_liberacao: number;
+}
+
 interface ProgressoAula {
   aula_id: string;
   concluida: boolean;
@@ -37,13 +45,14 @@ export default function ModuloPage() {
   const [aulas, setAulas] = useState<Aula[]>([]);
   const [progressoAulas, setProgressoAulas] = useState<ProgressoAula[]>([]);
   const [totalQuestoes, setTotalQuestoes] = useState(0);
+  const [questoesRespondidas, setQuestoesRespondidas] = useState(0);
+  const [simulado, setSimulado] = useState<SimuladoModulo | null>(null);
+  const [simuladoConcluido, setSimuladoConcluido] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [tabAtiva, setTabAtiva] = useState<'aulas' | 'exercicios'>('aulas');
   const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchData() {
-      // Verificar usuário
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         router.push('/login');
@@ -58,9 +67,7 @@ export default function ModuloPage() {
         .eq('id', moduloId)
         .single();
 
-      if (moduloData) {
-        setModulo(moduloData);
-      }
+      if (moduloData) setModulo(moduloData);
 
       // Buscar aulas do módulo
       const { data: aulasData } = await supabase
@@ -70,9 +77,7 @@ export default function ModuloPage() {
         .eq('ativo', true)
         .order('ordem', { ascending: true });
 
-      if (aulasData) {
-        setAulas(aulasData);
-      }
+      if (aulasData) setAulas(aulasData);
 
       // Buscar progresso das aulas
       const { data: progressoData } = await supabase
@@ -80,11 +85,9 @@ export default function ModuloPage() {
         .select('aula_id, concluida')
         .eq('user_id', user.id);
 
-      if (progressoData) {
-        setProgressoAulas(progressoData);
-      }
+      if (progressoData) setProgressoAulas(progressoData);
 
-      // Buscar total de questões
+      // Buscar total de questões do módulo
       const { data: faseData } = await supabase
         .from('fases')
         .select('id')
@@ -99,14 +102,43 @@ export default function ModuloPage() {
           .eq('ativo', true);
 
         setTotalQuestoes(count || 0);
+
+        // Buscar questões respondidas
+        const { data: respostasData } = await supabase
+          .from('respostas_usuario')
+          .select('questao_id, questoes!inner(fase_id)')
+          .eq('user_id', user.id)
+          .eq('questoes.fase_id', faseData.id);
+
+        setQuestoesRespondidas(respostasData?.length || 0);
+      }
+
+      // Buscar simulado do módulo
+      const { data: simuladoData } = await supabase
+        .from('simulados_modulo')
+        .select('*')
+        .eq('modulo_id', moduloId)
+        .eq('ativo', true)
+        .single();
+
+      if (simuladoData) setSimulado(simuladoData);
+
+      // Verificar se simulado foi concluído
+      if (simuladoData) {
+        const { data: resultadoData } = await supabase
+          .from('resultado_simulado_modulo')
+          .select('concluido')
+          .eq('user_id', user.id)
+          .eq('simulado_id', simuladoData.id)
+          .single();
+
+        setSimuladoConcluido(resultadoData?.concluido || false);
       }
 
       setLoading(false);
     }
 
-    if (moduloId) {
-      fetchData();
-    }
+    if (moduloId) fetchData();
   }, [moduloId, supabase, router]);
 
   const isAulaConcluida = (aulaId: string) => {
@@ -114,7 +146,10 @@ export default function ModuloPage() {
   };
 
   const aulasCompletadas = aulas.filter(a => isAulaConcluida(a.id)).length;
-  const progressoTotal = aulas.length > 0 ? Math.round((aulasCompletadas / aulas.length) * 100) : 0;
+  const progressoAulasPercent = aulas.length > 0 ? Math.round((aulasCompletadas / aulas.length) * 100) : 0;
+  const progressoExerciciosPercent = totalQuestoes > 0 ? Math.round((questoesRespondidas / totalQuestoes) * 100) : 0;
+  const progressoTotal = Math.round((progressoAulasPercent + progressoExerciciosPercent) / 2);
+  const simuladoLiberado = progressoTotal >= (simulado?.percentual_liberacao || 80);
   const tempoTotal = aulas.reduce((acc, a) => acc + (a.duracao_minutos || 0), 0);
 
   if (loading) {
@@ -129,9 +164,7 @@ export default function ModuloPage() {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center">
         <p className="text-slate-400 mb-4">Módulo não encontrado.</p>
-        <Link href="/plataforma/enem" className="text-blue-400 hover:underline">
-          Voltar aos módulos
-        </Link>
+        <Link href="/plataforma/enem" className="text-blue-400 hover:underline">Voltar</Link>
       </div>
     );
   }
@@ -168,12 +201,27 @@ export default function ModuloPage() {
               <p className="text-blue-100 text-sm">concluído</p>
             </div>
           </div>
-          
-          <div className="h-3 bg-white/20 rounded-full overflow-hidden mb-4">
-            <div 
-              className="h-full bg-white rounded-full transition-all duration-500"
-              style={{ width: `${progressoTotal}%` }}
-            ></div>
+
+          {/* Barras de progresso separadas */}
+          <div className="space-y-3 mb-4">
+            <div>
+              <div className="flex justify-between text-sm text-blue-100 mb-1">
+                <span>📖 Aulas</span>
+                <span>{aulasCompletadas}/{aulas.length} ({progressoAulasPercent}%)</span>
+              </div>
+              <div className="h-2 bg-white/20 rounded-full overflow-hidden">
+                <div className="h-full bg-emerald-400 rounded-full transition-all" style={{ width: `${progressoAulasPercent}%` }}></div>
+              </div>
+            </div>
+            <div>
+              <div className="flex justify-between text-sm text-blue-100 mb-1">
+                <span>✏️ Exercícios</span>
+                <span>{questoesRespondidas}/{totalQuestoes} ({progressoExerciciosPercent}%)</span>
+              </div>
+              <div className="h-2 bg-white/20 rounded-full overflow-hidden">
+                <div className="h-full bg-amber-400 rounded-full transition-all" style={{ width: `${progressoExerciciosPercent}%` }}></div>
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-3 gap-4">
@@ -192,133 +240,131 @@ export default function ModuloPage() {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex rounded-xl bg-slate-800/50 p-1 mb-6">
-          <button
-            onClick={() => setTabAtiva('aulas')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium transition-all ${
-              tabAtiva === 'aulas'
-                ? 'bg-blue-600 text-white'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <BookOpen className="w-5 h-5" />
-            Aulas ({aulas.length})
-          </button>
-          <button
-            onClick={() => setTabAtiva('exercicios')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium transition-all ${
-              tabAtiva === 'exercicios'
-                ? 'bg-blue-600 text-white'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <FileText className="w-5 h-5" />
-            Exercícios ({totalQuestoes})
-          </button>
-        </div>
-
-        {/* Conteúdo das Tabs */}
-        {tabAtiva === 'aulas' && (
+        {/* Lista de Aulas com Exercícios */}
+        <div className="mb-6">
+          <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+            <BookOpen className="w-5 h-5 text-blue-400" />
+            Aulas do Módulo
+          </h2>
           <div className="space-y-3">
-            {aulas.length === 0 ? (
-              <div className="text-center py-12">
-                <BookOpen className="w-16 h-16 text-slate-600 mx-auto mb-4" />
-                <p className="text-slate-400">Nenhuma aula cadastrada ainda.</p>
-              </div>
-            ) : (
-              aulas.map((aula, index) => {
-                const concluida = isAulaConcluida(aula.id);
-                const bloqueada = index > 0 && !isAulaConcluida(aulas[index - 1].id);
-
-                return (
-                  <Link
-                    key={aula.id}
-                    href={bloqueada ? '#' : `/plataforma/enem/modulo/${moduloId}/aula/${aula.id}`}
-                    className={`block rounded-2xl border transition-all ${
-                      bloqueada
-                        ? 'bg-slate-800/30 border-slate-700/30 opacity-50 cursor-not-allowed'
-                        : concluida
-                          ? 'bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/20'
-                          : 'bg-slate-800/50 border-slate-700/50 hover:bg-slate-700/50'
-                    }`}
-                  >
-                    <div className="p-4 flex items-center gap-4">
+            {aulas.map((aula) => {
+              const concluida = isAulaConcluida(aula.id);
+              return (
+                <div key={aula.id} className={`rounded-2xl border transition-all ${
+                  concluida
+                    ? 'bg-emerald-500/10 border-emerald-500/30'
+                    : 'bg-slate-800/50 border-slate-700/50'
+                }`}>
+                  {/* Card da Aula */}
+                  <Link href={`/plataforma/enem/modulo/${moduloId}/aula/${aula.id}`} className="block p-4">
+                    <div className="flex items-center gap-4">
                       <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                        bloqueada
-                          ? 'bg-slate-700/50 text-slate-500'
-                          : concluida
-                            ? 'bg-emerald-500 text-white'
-                            : 'bg-blue-500/20 text-blue-400'
+                        concluida ? 'bg-emerald-500 text-white' : 'bg-blue-500/20 text-blue-400'
                       }`}>
-                        {bloqueada ? (
-                          <Lock className="w-5 h-5" />
-                        ) : concluida ? (
-                          <CheckCircle className="w-6 h-6" />
-                        ) : (
-                          <Play className="w-5 h-5" />
-                        )}
+                        {concluida ? <CheckCircle className="w-6 h-6" /> : <Play className="w-5 h-5" />}
                       </div>
-                      
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <span className="text-slate-500 text-sm">Aula {aula.numero}</span>
-                          {concluida && (
-                            <span className="px-2 py-0.5 rounded-full text-xs bg-emerald-500/20 text-emerald-400">
-                              ✓ Concluída
-                            </span>
-                          )}
+                          {concluida && <span className="px-2 py-0.5 rounded-full text-xs bg-emerald-500/20 text-emerald-400">✓ Concluída</span>}
                         </div>
                         <h3 className="font-semibold text-white">{aula.titulo}</h3>
                         <p className="text-slate-400 text-sm">{aula.descricao}</p>
                       </div>
-
-                      <div className="flex items-center gap-3">
-                        <div className="text-right">
-                          <div className="flex items-center gap-1 text-slate-400 text-sm">
-                            <Clock className="w-4 h-4" />
-                            {aula.duracao_minutos}min
-                          </div>
-                        </div>
-                        <ChevronRight className="w-5 h-5 text-slate-500" />
+                      <div className="flex items-center gap-2 text-slate-400">
+                        <Clock className="w-4 h-4" />
+                        <span className="text-sm">{aula.duracao_minutos}min</span>
+                        <ChevronRight className="w-5 h-5" />
                       </div>
                     </div>
                   </Link>
-                );
-              })
-            )}
+                  
+                  {/* Botão de Exercícios da Aula */}
+                  <div className="px-4 pb-4">
+                    <Link
+                      href={`/plataforma/enem/modulo/${moduloId}/aula/${aula.id}/exercicios`}
+                      className="flex items-center justify-between p-3 rounded-xl bg-slate-700/30 hover:bg-slate-700/50 transition-all"
+                    >
+                      <div className="flex items-center gap-3">
+                        <FileText className="w-5 h-5 text-amber-400" />
+                        <span className="text-slate-300 text-sm">Exercícios desta aula</span>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-slate-500" />
+                    </Link>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Simulado do Módulo */}
+        {simulado && (
+          <div className="mb-6">
+            <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-amber-400" />
+              Simulado Final
+            </h2>
+            <div className={`rounded-2xl border p-6 ${
+              simuladoLiberado
+                ? simuladoConcluido
+                  ? 'bg-emerald-500/10 border-emerald-500/30'
+                  : 'bg-gradient-to-br from-amber-500/10 to-orange-500/10 border-amber-500/30'
+                : 'bg-slate-800/30 border-slate-700/30 opacity-60'
+            }`}>
+              <div className="flex items-center gap-4">
+                <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${
+                  simuladoLiberado
+                    ? simuladoConcluido
+                      ? 'bg-emerald-500 text-white'
+                      : 'bg-gradient-to-br from-amber-500 to-orange-500 text-white'
+                    : 'bg-slate-700/50 text-slate-500'
+                }`}>
+                  {simuladoLiberado ? (
+                    simuladoConcluido ? <CheckCircle className="w-7 h-7" /> : <Trophy className="w-7 h-7" />
+                  ) : (
+                    <Lock className="w-6 h-6" />
+                  )}
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-xl font-bold text-white">{simulado.titulo}</h3>
+                  <p className="text-slate-400 text-sm">
+                    {simulado.total_questoes} questões • {simulado.tempo_minutos} minutos
+                  </p>
+                  {!simuladoLiberado && (
+                    <p className="text-amber-400 text-sm mt-1">
+                      🔒 Libera com {simulado.percentual_liberacao}% do módulo (você tem {progressoTotal}%)
+                    </p>
+                  )}
+                  {simuladoConcluido && (
+                    <p className="text-emerald-400 text-sm mt-1">✓ Simulado concluído!</p>
+                  )}
+                </div>
+                {simuladoLiberado && !simuladoConcluido && (
+                  <Link
+                    href={`/plataforma/enem/modulo/${moduloId}/simulado`}
+                    className="px-6 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold hover:opacity-90"
+                  >
+                    Iniciar
+                  </Link>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
-        {tabAtiva === 'exercicios' && (
-          <div className="space-y-4">
-            {/* Aviso se não completou aulas */}
-            {progressoTotal < 100 && (
-              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
-                <p className="text-amber-400 text-sm">
-                  💡 Recomendamos completar as aulas antes de fazer os exercícios.
+        {/* Dica de progresso */}
+        {!simuladoLiberado && simulado && (
+          <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+            <div className="flex items-start gap-3">
+              <Target className="w-5 h-5 text-blue-400 mt-0.5" />
+              <div>
+                <p className="text-blue-400 font-medium">Continue estudando!</p>
+                <p className="text-slate-400 text-sm">
+                  Complete mais {simulado.percentual_liberacao - progressoTotal}% para liberar o Simulado Final.
                 </p>
               </div>
-            )}
-
-            {/* Card de Exercícios */}
-            <Link
-              href={`/plataforma/enem/modulo/${moduloId}/exercicios`}
-              className="block rounded-2xl bg-slate-800/50 border border-slate-700/50 hover:bg-slate-700/50 transition-all"
-            >
-              <div className="p-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
-                    <FileText className="w-7 h-7 text-white" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-xl font-bold text-white">Exercícios do Módulo</h3>
-                    <p className="text-slate-400">{totalQuestoes} questões para praticar</p>
-                  </div>
-                  <ChevronRight className="w-6 h-6 text-slate-500" />
-                </div>
-              </div>
-            </Link>
+            </div>
           </div>
         )}
       </main>
