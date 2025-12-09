@@ -363,7 +363,27 @@ export default function DashboardPage() {
         {/* Ações Rápidas */}
         <div className="space-y-3">
           <h2 className="text-lg font-bold text-gray-900">Estudar</h2>
-          
+          {/* Ações Rápidas */}
+<div className="space-y-3">
+  <h2 className="text-lg font-bold text-gray-900">Estudar</h2>
+  
+  {/* Ranking */}
+  <Link href="/ranking" className="block bg-gradient-to-r from-yellow-500 to-amber-500 rounded-2xl p-5 text-white hover:from-yellow-600 hover:to-amber-600 transition-all">
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+          <Trophy className="w-6 h-6" />
+        </div>
+        <div>
+          <p className="font-bold">Ranking</p>
+          <p className="text-white/80 text-sm">Veja sua posição</p>
+        </div>
+      </div>
+      <ChevronRight className="w-6 h-6" />
+    </div>
+  </Link>
+  
+           
           {/* Batalha Rápida */}
           <Link href="/batalha" className="block bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl p-5 text-white hover:from-amber-600 hover:to-orange-600 transition-all">
             <div className="flex items-center justify-between">
