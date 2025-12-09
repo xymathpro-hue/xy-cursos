@@ -1,27 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { 
-  Target,
-  ArrowRight,
-  ArrowLeft,
-  CheckCircle,
-  Home,
-  BookOpen,
-  TrendingUp,
-  Award,
-  Zap,
-  Flame,
-  Clock,
-  RotateCcw
-} from 'lucide-react';
+import { ArrowLeft, Target, CheckCircle, XCircle, Trophy, Lock } from 'lucide-react';
+import { adicionarXP } from '@/lib/xp-system';
+import MathText from '@/components/MathText';
 
 interface Questao {
   id: string;
-  numero: number;
   enunciado: string;
   alternativa_a: string;
   alternativa_b: string;
@@ -30,26 +18,21 @@ interface Questao {
   alternativa_e: string;
   resposta_correta: string;
   dificuldade: string;
+  competencia: string;
 }
 
 interface Resposta {
   questaoId: string;
-  letra: string;
+  respostaUsuario: string;
+  correta: boolean;
   dificuldade: string;
+  competencia: string;
 }
 
-interface DiagnosticoSalvo {
-  id: string;
+interface ResultadoDiagnostico {
   nivel: string;
   nota_tri: number;
-  total_acertos: number;
   percentual_geral: number;
-  acertos_facil: number;
-  acertos_medio: number;
-  acertos_dificil: number;
-  percentual_facil: number;
-  percentual_medio: number;
-  percentual_dificil: number;
   created_at: string;
 }
 
@@ -57,638 +40,295 @@ export default function DiagnosticoPage() {
   const router = useRouter();
   const supabase = createClientComponentClient();
 
+  const [loading, setLoading] = useState(true);
   const [questoes, setQuestoes] = useState<Questao[]>([]);
   const [questaoAtual, setQuestaoAtual] = useState(0);
   const [respostas, setRespostas] = useState<Resposta[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [iniciado, setIniciado] = useState(false);
-  const [finalizado, setFinalizado] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [salvando, setSalvando] = useState(false);
-  const [diagnosticoAnterior, setDiagnosticoAnterior] = useState<DiagnosticoSalvo | null>(null);
+  const [respondida, setRespondida] = useState(false);
+  const [respostaSelecionada, setRespostaSelecionada] = useState<string | null>(null);
+  const [fase, setFase] = useState<'verificando' | 'bloqueado' | 'inicio' | 'jogando' | 'resultado'>('verificando');
   const [diasRestantes, setDiasRestantes] = useState(0);
+  const [resultadoAnterior, setResultadoAnterior] = useState<ResultadoDiagnostico | null>(null);
 
   useEffect(() => {
-    async function fetchData() {
+    async function checkAuth() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         router.push('/login');
         return;
       }
-      setUserId(user.id);
 
-      // Verificar se já fez diagnóstico
-      const { data: diagnostico } = await supabase
+      const { data: resultado } = await supabase
         .from('diagnostico_resultados')
         .select('*')
         .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
         .single();
 
-      if (diagnostico) {
-        const dataFez = new Date(diagnostico.created_at);
-        const agora = new Date();
-        const diffTime = agora.getTime() - dataFez.getTime();
-        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-        const diasParaRefazer = 30 - diffDays;
-
-        if (diasParaRefazer > 0) {
-          setDiagnosticoAnterior(diagnostico);
-          setDiasRestantes(diasParaRefazer);
-          setLoading(false);
-          return;
+      if (resultado) {
+        const dataResultado = new Date(resultado.created_at);
+        const hoje = new Date();
+        const diffDias = Math.floor((hoje.getTime() - dataResultado.getTime()) / (1000 * 60 * 60 * 24));
+        
+        if (diffDias < 30) {
+          setDiasRestantes(30 - diffDias);
+          setResultadoAnterior(resultado);
+          setFase('bloqueado');
+        } else {
+          setFase('inicio');
         }
+      } else {
+        setFase('inicio');
       }
 
-      // Buscar questões
-      const { data: faceis } = await supabase
-        .from('questoes')
-        .select('*')
-        .eq('ativo', true)
-        .eq('dificuldade', 'facil')
-        .limit(30);
-
-      const { data: medias } = await supabase
-        .from('questoes')
-        .select('*')
-        .eq('ativo', true)
-        .eq('dificuldade', 'medio')
-        .limit(30);
-
-      const { data: dificeis } = await supabase
-        .from('questoes')
-        .select('*')
-        .eq('ativo', true)
-        .eq('dificuldade', 'dificil')
-        .limit(30);
-
-      const shuffleArray = (arr: Questao[]) => arr.sort(() => Math.random() - 0.5);
-      
-      const questoesSelecionadas = [
-        ...shuffleArray(faceis || []).slice(0, 10),
-        ...shuffleArray(medias || []).slice(0, 10),
-        ...shuffleArray(dificeis || []).slice(0, 10)
-      ];
-
-      setQuestoes(shuffleArray(questoesSelecionadas));
       setLoading(false);
     }
-
-    fetchData();
+    checkAuth();
   }, [supabase, router]);
 
-  const questao = questoes[questaoAtual];
+  const carregarQuestoes = async () => {
+    const { data } = await supabase
+      .from('questoes')
+      .select('*')
+      .eq('ativo', true)
+      .limit(100);
 
-  const getRespostaAtual = () => {
-    const resp = respostas.find(r => r.questaoId === questao?.id);
-    return resp?.letra || null;
-  };
-
-  const handleSelecionarResposta = (letra: string) => {
-    if (finalizado) return;
-    setRespostas(prev => {
-      const outras = prev.filter(r => r.questaoId !== questao.id);
-      return [...outras, { questaoId: questao.id, letra, dificuldade: questao.dificuldade }];
-    });
-  };
-
-  const handleProxima = () => {
-    if (questaoAtual < questoes.length - 1) {
-      setQuestaoAtual(prev => prev + 1);
+    if (data && data.length >= 15) {
+      const shuffled = data.sort(() => Math.random() - 0.5);
+      setQuestoes(shuffled.slice(0, 15));
     }
   };
 
-  const handleAnterior = () => {
-    if (questaoAtual > 0) {
-      setQuestaoAtual(prev => prev - 1);
-    }
+  const iniciarDiagnostico = async () => {
+    await carregarQuestoes();
+    setFase('jogando');
+    setQuestaoAtual(0);
+    setRespostas([]);
   };
 
-  const handleIrParaQuestao = (index: number) => {
-    setQuestaoAtual(index);
-  };
+  const processarResposta = useCallback((resposta: string) => {
+    if (respondida || questoes.length === 0) return;
 
-  const calcularResultado = () => {
-    let acertosFacil = 0, acertosMedio = 0, acertosDificil = 0;
-    let totalFacil = 0, totalMedio = 0, totalDificil = 0;
+    const questao = questoes[questaoAtual];
+    const correta = resposta === questao.resposta_correta;
 
-    questoes.forEach(q => {
-      const resp = respostas.find(r => r.questaoId === q.id);
-      const acertou = resp?.letra === q.resposta_correta;
+    setRespondida(true);
+    setRespostaSelecionada(resposta);
 
-      if (q.dificuldade === 'facil') {
-        totalFacil++;
-        if (acertou) acertosFacil++;
-      } else if (q.dificuldade === 'medio') {
-        totalMedio++;
-        if (acertou) acertosMedio++;
+    const novaResposta: Resposta = {
+      questaoId: questao.id,
+      respostaUsuario: resposta,
+      correta,
+      dificuldade: questao.dificuldade || 'medio',
+      competencia: questao.competencia || 'geral'
+    };
+
+    setRespostas(prev => [...prev, novaResposta]);
+
+    setTimeout(() => {
+      if (questaoAtual < questoes.length - 1) {
+        setQuestaoAtual(prev => prev + 1);
+        setRespondida(false);
+        setRespostaSelecionada(null);
       } else {
-        totalDificil++;
-        if (acertou) acertosDificil++;
+        finalizarDiagnostico([...respostas, novaResposta]);
       }
-    });
+    }, 1500);
+  }, [respondida, questoes, questaoAtual, respostas]);
 
-    const totalAcertos = acertosFacil + acertosMedio + acertosDificil;
-    const percentualGeral = Math.round((totalAcertos / questoes.length) * 100);
-    const percentualFacil = totalFacil > 0 ? Math.round((acertosFacil / totalFacil) * 100) : 0;
-    const percentualMedio = totalMedio > 0 ? Math.round((acertosMedio / totalMedio) * 100) : 0;
-    const percentualDificil = totalDificil > 0 ? Math.round((acertosDificil / totalDificil) * 100) : 0;
+  const finalizarDiagnostico = async (todasRespostas: Resposta[]) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const acertos = todasRespostas.filter(r => r.correta).length;
+    const percentual = Math.round((acertos / todasRespostas.length) * 100);
+
+    let notaTRI = 400 + (percentual * 5);
+    notaTRI = Math.min(Math.max(notaTRI, 300), 900);
 
     let nivel = 'Iniciante';
-    let nivelCor = 'text-amber-600';
-    let nivelBg = 'bg-amber-100';
-    let notaTRI = 0;
+    if (notaTRI >= 750) nivel = 'Avançado';
+    else if (notaTRI >= 600) nivel = 'Intermediário';
+    else if (notaTRI >= 450) nivel = 'Básico';
 
-    if (percentualGeral >= 80) {
-      nivel = 'Avançado'; nivelCor = 'text-emerald-600'; nivelBg = 'bg-emerald-100';
-      notaTRI = 750 + (percentualGeral - 80) * 2.5;
-    } else if (percentualGeral >= 60) {
-      nivel = 'Intermediário'; nivelCor = 'text-blue-600'; nivelBg = 'bg-blue-100';
-      notaTRI = 600 + (percentualGeral - 60) * 7.5;
-    } else if (percentualGeral >= 40) {
-      nivel = 'Básico'; nivelCor = 'text-amber-600'; nivelBg = 'bg-amber-100';
-      notaTRI = 450 + (percentualGeral - 40) * 7.5;
-    } else {
-      nivel = 'Iniciante'; nivelCor = 'text-red-600'; nivelBg = 'bg-red-100';
-      notaTRI = 300 + percentualGeral * 3.75;
-    }
+    await supabase.from('diagnostico_resultados').insert({
+      user_id: user.id,
+      nivel,
+      nota_tri: Math.round(notaTRI),
+      percentual_geral: percentual,
+      total_questoes: todasRespostas.length,
+      total_acertos: acertos
+    });
 
-    return { totalAcertos, percentualGeral, acertosFacil, acertosMedio, acertosDificil, percentualFacil, percentualMedio, percentualDificil, nivel, nivelCor, nivelBg, notaTRI: Math.round(notaTRI) };
-  };
+    await adicionarXP(supabase, user.id, 100, 'Diagnóstico Completo');
 
-  const handleFinalizar = async () => {
-    if (!userId) return;
-    setSalvando(true);
-
-    const resultado = calcularResultado();
-
-    // Salvar resultado do diagnóstico
-    await supabase.from('diagnostico_resultados').upsert({
-      user_id: userId,
-      nivel: resultado.nivel,
-      nota_tri: resultado.notaTRI,
-      total_acertos: resultado.totalAcertos,
-      percentual_geral: resultado.percentualGeral,
-      acertos_facil: resultado.acertosFacil,
-      acertos_medio: resultado.acertosMedio,
-      acertos_dificil: resultado.acertosDificil,
-      percentual_facil: resultado.percentualFacil,
-      percentual_medio: resultado.percentualMedio,
-      percentual_dificil: resultado.percentualDificil,
+    setResultadoAnterior({
+      nivel,
+      nota_tri: Math.round(notaTRI),
+      percentual_geral: percentual,
       created_at: new Date().toISOString()
-    }, { onConflict: 'user_id' });
+    });
 
-    // Salvar respostas
-    for (const resp of respostas) {
-      const q = questoes.find(quest => quest.id === resp.questaoId);
-      if (q) {
-        const correta = resp.letra === q.resposta_correta;
-        
-        await supabase.from('respostas_usuario').upsert({
-          user_id: userId,
-          questao_id: resp.questaoId,
-          resposta_selecionada: resp.letra,
-          correta
-        }, { onConflict: 'user_id,questao_id' });
-
-        if (!correta) {
-          await supabase.from('caderno_erros').upsert({
-            user_id: userId,
-            questao_id: resp.questaoId,
-            resposta_usuario: resp.letra,
-            revisado: false,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'user_id,questao_id' });
-        }
-      }
-    }
-
-    setSalvando(false);
-    setFinalizado(true);
+    setFase('resultado');
   };
 
-  const getDificuldadeCor = (dif: string) => {
-    switch (dif) {
-      case 'facil': return 'bg-emerald-100 text-emerald-700';
-      case 'dificil': return 'bg-red-100 text-red-700';
-      default: return 'bg-amber-100 text-amber-700';
+  const getAlternativaCor = (letra: string) => {
+    if (!respondida) {
+      return 'border-gray-200 hover:border-violet-300 hover:bg-violet-50';
     }
+    const questao = questoes[questaoAtual];
+    if (letra === questao.resposta_correta) {
+      return 'border-emerald-500 bg-emerald-50';
+    }
+    if (letra === respostaSelecionada) {
+      return 'border-red-500 bg-red-50';
+    }
+    return 'border-gray-200 opacity-50';
   };
 
-  const getNomeDificuldade = (dif: string) => {
-    switch (dif) {
-      case 'facil': return 'Fácil';
-      case 'dificil': return 'Difícil';
-      default: return 'Médio';
-    }
-  };
-
-  const getNivelCor = (nivel: string) => {
-    switch (nivel) {
-      case 'Avançado': return { cor: 'text-emerald-600', bg: 'bg-emerald-100' };
-      case 'Intermediário': return { cor: 'text-blue-600', bg: 'bg-blue-100' };
-      case 'Básico': return { cor: 'text-amber-600', bg: 'bg-amber-100' };
-      default: return { cor: 'text-red-600', bg: 'bg-red-100' };
-    }
-  };
-
-  if (loading) {
+  if (loading || fase === 'verificando') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
-        <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin"></div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin"></div>
       </div>
     );
   }
-  // Tela de resultado anterior (já fez e não pode refazer)
-  if (diagnosticoAnterior) {
-    const cores = getNivelCor(diagnosticoAnterior.nivel);
-    const dataFez = new Date(diagnosticoAnterior.created_at);
-    const erros = 30 - diagnosticoAnterior.total_acertos;
 
+  if (fase === 'bloqueado') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-violet-500 to-purple-600 p-4">
-        <div className="max-w-2xl mx-auto">
-          <div className="bg-white rounded-3xl p-8 text-center shadow-2xl">
-            <div className={`w-20 h-20 ${cores.bg} rounded-full flex items-center justify-center mx-auto mb-4`}>
-              <Award className={`w-10 h-10 ${cores.cor}`} />
-            </div>
-            
-            <h2 className="text-2xl font-black text-gray-900 mb-1">Seu Diagnóstico</h2>
-            <p className="text-gray-500 mb-6">
-              Realizado em {dataFez.toLocaleDateString('pt-BR')}
-            </p>
-
-            <div className={`${cores.bg} rounded-2xl p-6 mb-6`}>
-              <p className="text-sm text-gray-500 mb-1">Seu Nível</p>
-              <p className={`text-3xl font-black ${cores.cor}`}>{diagnosticoAnterior.nivel}</p>
-              <div className="mt-3 flex items-center justify-center gap-2">
-                <TrendingUp className={`w-5 h-5 ${cores.cor}`} />
-                <span className={`text-lg font-bold ${cores.cor}`}>
-                  Nota TRI: {diagnosticoAnterior.nota_tri}
-                </span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              <div className="bg-emerald-50 rounded-xl p-4">
-                <p className="text-2xl font-bold text-emerald-600">{diagnosticoAnterior.total_acertos}</p>
-                <p className="text-emerald-700 text-sm">Acertos</p>
-              </div>
-              <div className="bg-red-50 rounded-xl p-4">
-                <p className="text-2xl font-bold text-red-600">{erros}</p>
-                <p className="text-red-700 text-sm">Erros</p>
-              </div>
-              <div className="bg-blue-50 rounded-xl p-4">
-                <p className="text-2xl font-bold text-blue-600">{diagnosticoAnterior.percentual_geral}%</p>
-                <p className="text-blue-700 text-sm">Taxa</p>
-              </div>
-            </div>
-
-            <div className="bg-gray-50 rounded-2xl p-4 mb-6">
-              <p className="text-sm font-medium text-gray-700 mb-4">Desempenho por Dificuldade</p>
-              
-              <div className="space-y-3">
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-emerald-700 font-medium">🟢 Fácil</span>
-                    <span className="text-gray-600">{diagnosticoAnterior.acertos_facil}/10 ({diagnosticoAnterior.percentual_facil}%)</span>
-                  </div>
-                  <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-500" style={{ width: `${diagnosticoAnterior.percentual_facil}%` }} />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-amber-700 font-medium">🟡 Médio</span>
-                    <span className="text-gray-600">{diagnosticoAnterior.acertos_medio}/10 ({diagnosticoAnterior.percentual_medio}%)</span>
-                  </div>
-                  <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-amber-500" style={{ width: `${diagnosticoAnterior.percentual_medio}%` }} />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-red-700 font-medium">🔴 Difícil</span>
-                    <span className="text-gray-600">{diagnosticoAnterior.acertos_dificil}/10 ({diagnosticoAnterior.percentual_dificil}%)</span>
-                  </div>
-                  <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-red-500" style={{ width: `${diagnosticoAnterior.percentual_dificil}%` }} />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Aviso de quando pode refazer */}
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6">
-              <div className="flex items-center justify-center gap-2 text-amber-700">
-                <Clock className="w-5 h-5" />
-                <span className="font-medium">
-                  Novo diagnóstico disponível em {diasRestantes} dia{diasRestantes > 1 ? 's' : ''}
-                </span>
-              </div>
-              <p className="text-amber-600 text-sm mt-1">
-                Continue estudando e melhore sua nota!
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <Link href="/caderno-erros" className="w-full py-3 rounded-xl border-2 border-red-200 text-red-600 font-medium hover:bg-red-50 flex items-center justify-center gap-2">
-                <BookOpen className="w-5 h-5" />
-                Revisar Erros
-              </Link>
-              <Link href="/batalha" className="w-full py-3 rounded-xl border-2 border-amber-200 text-amber-600 font-medium hover:bg-amber-50 flex items-center justify-center gap-2">
-                <Zap className="w-5 h-5" />
-                Batalha Rápida
-              </Link>
-              <Link href="/dashboard" className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 text-white font-bold hover:from-violet-600 hover:to-purple-600 flex items-center justify-center gap-2">
-                <Home className="w-5 h-5" />
-                Ir para Dashboard
-              </Link>
-            </div>
+      <div className="min-h-screen bg-gray-50">
+        <header className="bg-white border-b border-gray-200 px-4 py-4">
+          <Link href="/dashboard" className="flex items-center gap-2 text-gray-600">
+            <ArrowLeft className="w-5 h-5" />
+            <span>Voltar</span>
+          </Link>
+        </header>
+        <main className="max-w-lg mx-auto px-4 py-12 text-center">
+          <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Lock className="w-10 h-10 text-gray-400" />
           </div>
-        </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Diagnóstico Bloqueado</h1>
+          <p className="text-gray-600 mb-6">Você pode refazer o diagnóstico em <strong>{diasRestantes} dias</strong>.</p>
+          {resultadoAnterior && (
+            <div className="bg-violet-50 rounded-2xl p-6 text-left">
+              <h3 className="font-bold text-violet-900 mb-3">Seu último resultado:</h3>
+              <p className="text-violet-700">Nível: <strong>{resultadoAnterior.nivel}</strong></p>
+              <p className="text-violet-700">Nota TRI: <strong>{resultadoAnterior.nota_tri}</strong></p>
+              <p className="text-violet-700">Acertos: <strong>{resultadoAnterior.percentual_geral}%</strong></p>
+            </div>
+          )}
+        </main>
       </div>
     );
   }
 
-  // Tela inicial
-  if (!iniciado) {
+  if (fase === 'inicio') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center p-4">
-        <div className="max-w-md w-full">
-          <div className="bg-white rounded-3xl p-8 text-center shadow-2xl">
-            <div className="w-20 h-20 bg-violet-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <Target className="w-10 h-10 text-violet-600" />
-            </div>
-            
-            <h1 className="text-3xl font-black text-gray-900 mb-2">Diagnóstico</h1>
-            <p className="text-gray-500 mb-8">Descubra seu nível em matemática</p>
-
-            <div className="bg-violet-50 rounded-2xl p-6 mb-8">
-              <div className="grid grid-cols-3 gap-4 mb-4">
-                <div className="text-center">
-                  <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center mx-auto mb-2">
-                    <Zap className="w-5 h-5 text-emerald-600" />
-                  </div>
-                  <p className="text-xs text-gray-500">10 Fáceis</p>
-                </div>
-                <div className="text-center">
-                  <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center mx-auto mb-2">
-                    <Target className="w-5 h-5 text-amber-600" />
-                  </div>
-                  <p className="text-xs text-gray-500">10 Médias</p>
-                </div>
-                <div className="text-center">
-                  <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center mx-auto mb-2">
-                    <Flame className="w-5 h-5 text-red-600" />
-                  </div>
-                  <p className="text-xs text-gray-500">10 Difíceis</p>
-                </div>
-              </div>
-              <p className="text-violet-700 text-sm">30 questões para avaliar seu conhecimento</p>
-            </div>
-
-            <div className="space-y-3 mb-6">
-              <div className="flex items-center gap-3 text-left text-sm text-gray-600">
-                <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" />
-                <span>Sem limite de tempo</span>
-              </div>
-              <div className="flex items-center gap-3 text-left text-sm text-gray-600">
-                <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" />
-                <span>Navegue entre as questões livremente</span>
-              </div>
-              <div className="flex items-center gap-3 text-left text-sm text-gray-600">
-                <RotateCcw className="w-5 h-5 text-amber-500 shrink-0" />
-                <span>Pode refazer após 30 dias</span>
-              </div>
-            </div>
-
-            <button
-              onClick={() => setIniciado(true)}
-              className="w-full py-4 rounded-2xl bg-gradient-to-r from-violet-500 to-purple-500 text-white font-bold text-lg hover:from-violet-600 hover:to-purple-600 transition-all shadow-lg"
-            >
-              🎯 INICIAR DIAGNÓSTICO
-            </button>
-
-            <Link href="/dashboard" className="block mt-4 text-gray-400 hover:text-gray-600">
-              Voltar ao Dashboard
-            </Link>
+      <div className="min-h-screen bg-gradient-to-b from-violet-500 to-purple-600">
+        <header className="px-4 py-4">
+          <Link href="/dashboard" className="inline-flex items-center gap-2 text-white/80 hover:text-white">
+            <ArrowLeft className="w-5 h-5" />
+            <span>Voltar</span>
+          </Link>
+        </header>
+        <main className="px-4 py-12 text-center text-white">
+          <div className="w-24 h-24 bg-white/20 rounded-3xl flex items-center justify-center mx-auto mb-6">
+            <Target className="w-12 h-12" />
           </div>
-        </div>
+          <h1 className="text-4xl font-black mb-4">Diagnóstico</h1>
+          <p className="text-white/80 text-lg mb-8">Descubra seu nível em matemática</p>
+          <div className="bg-white/10 rounded-2xl p-6 mb-8 max-w-sm mx-auto">
+            <ul className="text-left space-y-2 text-white/90">
+              <li>📝 15 questões de múltipla escolha</li>
+              <li>⏱️ Sem limite de tempo</li>
+              <li>📊 Resultado com nota TRI simulada</li>
+              <li>🔒 Pode refazer após 30 dias</li>
+              <li>⭐ Ganhe 100 XP ao completar</li>
+            </ul>
+          </div>
+          <button onClick={iniciarDiagnostico} className="bg-white text-violet-600 font-bold text-xl px-12 py-4 rounded-2xl hover:bg-violet-50 transition-all">
+            🎯 Iniciar Diagnóstico
+          </button>
+        </main>
       </div>
     );
   }
 
-  // Tela de resultado (após finalizar)
-  if (finalizado) {
-    const resultado = calcularResultado();
-    const erros = questoes.length - resultado.totalAcertos;
-
+  if (fase === 'resultado' && resultadoAnterior) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-violet-500 to-purple-600 p-4">
-        <div className="max-w-2xl mx-auto">
-          <div className="bg-white rounded-3xl p-8 text-center shadow-2xl">
-            <div className={`w-20 h-20 ${resultado.nivelBg} rounded-full flex items-center justify-center mx-auto mb-4`}>
-              <Award className={`w-10 h-10 ${resultado.nivelCor}`} />
-            </div>
-            
-            <h2 className="text-2xl font-black text-gray-900 mb-1">Diagnóstico Concluído!</h2>
-            <p className="text-gray-500 mb-6">Seu perfil de aprendizagem</p>
-
-            <div className={`${resultado.nivelBg} rounded-2xl p-6 mb-6`}>
-              <p className="text-sm text-gray-500 mb-1">Seu Nível</p>
-              <p className={`text-3xl font-black ${resultado.nivelCor}`}>{resultado.nivel}</p>
-              <div className="mt-3 flex items-center justify-center gap-2">
-                <TrendingUp className={`w-5 h-5 ${resultado.nivelCor}`} />
-                <span className={`text-lg font-bold ${resultado.nivelCor}`}>
-                  Nota TRI Estimada: {resultado.notaTRI}
-                </span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              <div className="bg-emerald-50 rounded-xl p-4">
-                <p className="text-2xl font-bold text-emerald-600">{resultado.totalAcertos}</p>
-                <p className="text-emerald-700 text-sm">Acertos</p>
-              </div>
-              <div className="bg-red-50 rounded-xl p-4">
-                <p className="text-2xl font-bold text-red-600">{erros}</p>
-                <p className="text-red-700 text-sm">Erros</p>
-              </div>
-              <div className="bg-blue-50 rounded-xl p-4">
-                <p className="text-2xl font-bold text-blue-600">{resultado.percentualGeral}%</p>
-                <p className="text-blue-700 text-sm">Taxa</p>
-              </div>
-            </div>
-
-            <div className="bg-gray-50 rounded-2xl p-4 mb-6">
-              <p className="text-sm font-medium text-gray-700 mb-4">Desempenho por Dificuldade</p>
-              <div className="space-y-3">
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-emerald-700 font-medium">🟢 Fácil</span>
-                    <span className="text-gray-600">{resultado.acertosFacil}/10 ({resultado.percentualFacil}%)</span>
-                  </div>
-                  <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-500" style={{ width: `${resultado.percentualFacil}%` }} />
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-amber-700 font-medium">🟡 Médio</span>
-                    <span className="text-gray-600">{resultado.acertosMedio}/10 ({resultado.percentualMedio}%)</span>
-                  </div>
-                  <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-amber-500" style={{ width: `${resultado.percentualMedio}%` }} />
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-red-700 font-medium">🔴 Difícil</span>
-                    <span className="text-gray-600">{resultado.acertosDificil}/10 ({resultado.percentualDificil}%)</span>
-                  </div>
-                  <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-red-500" style={{ width: `${resultado.percentualDificil}%` }} />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-violet-50 rounded-2xl p-4 mb-6 text-left">
-              <p className="text-sm font-medium text-violet-800 mb-3">📋 Plano de Estudos:</p>
-              <ul className="space-y-2 text-sm text-violet-700">
-                {resultado.percentualFacil < 80 && <li>• Reforce conceitos básicos com questões Fáceis</li>}
-                {resultado.percentualMedio < 60 && <li>• Pratique mais questões de nível Médio</li>}
-                {resultado.percentualGeral >= 70 && <li>• Ótimo! Foque nas Batalhas Rápidas</li>}
-                <li>• Revise os {erros} erros no Caderno de Erros</li>
-              </ul>
-            </div>
-
-            <div className="space-y-3">
-              {erros > 0 && (
-                <Link href="/caderno-erros" className="w-full py-3 rounded-xl border-2 border-red-200 text-red-600 font-medium hover:bg-red-50 flex items-center justify-center gap-2">
-                  <BookOpen className="w-5 h-5" />
-                  Revisar {erros} Erros
-                </Link>
-              )}
-              <Link href="/dashboard" className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 text-white font-bold flex items-center justify-center gap-2">
-                <Home className="w-5 h-5" />
-                Ir para Dashboard
-              </Link>
-            </div>
+      <div className="min-h-screen bg-gradient-to-b from-violet-500 to-purple-600">
+        <main className="px-4 py-12 text-center text-white">
+          <div className="w-24 h-24 bg-white/20 rounded-3xl flex items-center justify-center mx-auto mb-6">
+            <Trophy className="w-12 h-12" />
           </div>
-        </div>
+          <h1 className="text-4xl font-black mb-2">Diagnóstico Completo!</h1>
+          <p className="text-white/80 mb-8">+100 XP</p>
+          <div className="bg-white/10 rounded-2xl p-6 mb-6 max-w-sm mx-auto">
+            <p className="text-white/70 mb-1">Seu nível</p>
+            <p className="text-4xl font-black mb-4">{resultadoAnterior.nivel}</p>
+            <p className="text-white/70 mb-1">Nota TRI estimada</p>
+            <p className="text-5xl font-black text-yellow-300">{resultadoAnterior.nota_tri}</p>
+          </div>
+          <div className="bg-white/10 rounded-2xl p-4 mb-8 max-w-sm mx-auto">
+            <p className="text-white/70">Taxa de acerto</p>
+            <p className="text-2xl font-bold">{resultadoAnterior.percentual_geral}%</p>
+          </div>
+          <Link href="/dashboard" className="inline-block bg-white text-violet-600 font-bold px-8 py-3 rounded-xl hover:bg-violet-50 transition-all">
+            Voltar ao Dashboard
+          </Link>
+        </main>
       </div>
     );
   }
 
-  // Tela de questão
-  const respostaAtual = getRespostaAtual();
-  const progresso = ((questaoAtual + 1) / questoes.length) * 100;
-  const todasRespondidas = respostas.length === questoes.length;
+  const questao = questoes[questaoAtual];
+  if (!questao) return null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-500 to-purple-600">
-      <header className="bg-white/10 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Target className="w-6 h-6 text-white" />
-              <span className="text-white font-bold">Diagnóstico</span>
-            </div>
-            <div className="text-white text-sm">{respostas.length}/{questoes.length}</div>
-          </div>
-
-          <div className="mt-3">
-            <div className="flex items-center justify-between text-xs text-white/70 mb-1">
-              <span>Questão {questaoAtual + 1} de {questoes.length}</span>
-              <span>{Math.round(progresso)}%</span>
-            </div>
-            <div className="h-2 bg-white/20 rounded-full overflow-hidden">
-              <div className="h-full bg-white transition-all" style={{ width: `${progresso}%` }}></div>
-            </div>
-          </div>
-
-          <div className="mt-3 flex gap-1 overflow-x-auto pb-2">
-            {questoes.map((q, index) => {
-              const respondida = respostas.some(r => r.questaoId === q.id);
-              const isAtual = index === questaoAtual;
-              let bgColor = 'bg-white/20';
-              if (isAtual) bgColor = 'bg-white';
-              else if (respondida) bgColor = 'bg-emerald-400';
-
-              return (
-                <button
-                  key={q.id}
-                  onClick={() => handleIrParaQuestao(index)}
-                  className={`w-7 h-7 rounded-lg text-xs font-medium flex-shrink-0 ${bgColor} ${isAtual ? 'text-violet-600' : 'text-white'}`}
-                >
-                  {index + 1}
-                </button>
-              );
-            })}
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-white border-b border-gray-200 px-4 py-3">
+        <div className="flex items-center justify-between max-w-2xl mx-auto">
+          <div className="flex items-center gap-2">
+            <Target className="w-5 h-5 text-violet-500" />
+            <span className="font-bold text-gray-900">Questão {questaoAtual + 1}/15</span>
           </div>
         </div>
       </header>
-
-      <main className="px-4 py-6">
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-white rounded-3xl p-6 shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <span className={`px-3 py-1 rounded-full text-xs font-medium ${getDificuldadeCor(questao.dificuldade)}`}>
-                {getNomeDificuldade(questao.dificuldade)}
-              </span>
-              <span className="text-sm text-gray-400">Questão {questaoAtual + 1}</span>
-            </div>
-
-            <p className="text-gray-800 text-lg mb-6 leading-relaxed whitespace-pre-line">{questao.enunciado}</p>
-
-            <div className="space-y-3">
-              {['A', 'B', 'C', 'D', 'E'].map(letra => {
-                const texto = questao[`alternativa_${letra.toLowerCase()}` as keyof Questao] as string;
-                if (!texto) return null;
-                const isSelected = respostaAtual === letra;
-
-                return (
-                  <button
-                    key={`${questao.id}-${letra}`}
-                    onClick={() => handleSelecionarResposta(letra)}
-                    className={`w-full p-4 rounded-xl border-2 text-left transition-all ${isSelected ? 'border-violet-500 bg-violet-50' : 'border-gray-200 hover:border-violet-300'}`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 ${isSelected ? 'bg-violet-500 text-white' : 'bg-gray-100 text-gray-600'}`}>{letra}</span>
-                      <span className="text-gray-700 pt-0.5">{texto}</span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between mt-6">
-            <button onClick={handleAnterior} disabled={questaoAtual === 0} className={`flex items-center gap-2 px-4 py-2 rounded-xl ${questaoAtual === 0 ? 'text-white/30' : 'text-white hover:bg-white/10'}`}>
-              <ArrowLeft className="w-5 h-5" />
-              Anterior
-            </button>
-
-            {questaoAtual < questoes.length - 1 ? (
-              <button onClick={handleProxima} className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold bg-white text-violet-600 hover:bg-white/90">
-                Próxima
-                <ArrowRight className="w-5 h-5" />
-              </button>
-            ) : (
-              <button onClick={handleFinalizar} disabled={salvando} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold ${todasRespondidas ? 'bg-emerald-500 text-white' : 'bg-amber-500 text-white'}`}>
-                {salvando ? 'Salvando...' : todasRespondidas ? 'Ver Resultado' : `Finalizar (${respostas.length}/${questoes.length})`}
-                <CheckCircle className="w-5 h-5" />
-              </button>
-            )}
-          </div>
-
-          {questaoAtual === questoes.length - 1 && !todasRespondidas && (
-            <p className="text-white/80 text-sm text-center mt-4">⚠️ Faltam {questoes.length - respostas.length} questão(ões)</p>
-          )}
+      <div className="h-1 bg-gray-200">
+        <div className="h-full bg-violet-500 transition-all" style={{ width: `${((questaoAtual + 1) / 15) * 100}%` }} />
+      </div>
+      <main className="max-w-2xl mx-auto px-4 py-6">
+        <div className="bg-white rounded-2xl p-6 mb-6 border border-gray-100">
+          <MathText text={questao.enunciado} className="text-gray-900" />
         </div>
+        <div className="space-y-3">
+          {['a', 'b', 'c', 'd', 'e'].map((letra) => {
+            const texto = questao[`alternativa_${letra}` as keyof Questao] as string;
+            if (!texto) return null;
+            return (
+              <button key={letra} onClick={() => !respondida && processarResposta(letra)} disabled={respondida} className={`w-full text-left p-4 rounded-xl border-2 transition-all ${getAlternativaCor(letra)}`}>
+                <div className="flex items-start gap-3">
+                  <span className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm shrink-0 ${respondida && letra === questao.resposta_correta ? 'bg-emerald-500 text-white' : respondida && letra === respostaSelecionada ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                    {letra.toUpperCase()}
+                  </span>
+                  <MathText text={texto} className="text-gray-700 flex-1" />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        {respondida && (
+          <div className={`mt-6 p-4 rounded-xl ${respostaSelecionada === questao.resposta_correta ? 'bg-emerald-100 border border-emerald-300' : 'bg-red-100 border border-red-300'}`}>
+            <div className="flex items-center gap-2">
+              {respostaSelecionada === questao.resposta_correta ? (
+                <><CheckCircle className="w-5 h-5 text-emerald-600" /><span className="font-bold text-emerald-700">Correto!</span></>
+              ) : (
+                <><XCircle className="w-5 h-5 text-red-600" /><span className="font-bold text-red-700">Incorreto</span></>
+              )}
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
