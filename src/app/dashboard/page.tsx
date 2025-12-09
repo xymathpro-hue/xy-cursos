@@ -78,16 +78,13 @@ export default function DashboardPage() {
         return;
       }
 
-      // Nome do usuário
       const nome = user.user_metadata?.nome || user.email?.split('@')[0] || 'Estudante';
       setUserName(nome);
 
-      // Stats do usuário
       const stats = await getOrCreateUserStats(supabase, user.id);
       if (stats) {
         setUserStats(stats);
 
-        // Verificar conquistas
         const diagnosticoCompleto = await verificarDiagnostico(user.id);
         const novas = await verificarConquistas(supabase, user.id, stats, diagnosticoCompleto);
         if (novas.length > 0) {
@@ -96,7 +93,6 @@ export default function DashboardPage() {
         }
       }
 
-      // Diagnóstico
       const { data: diagData } = await supabase
         .from('diagnostico_resultados')
         .select('nivel, nota_tri, percentual_geral, created_at')
@@ -107,7 +103,6 @@ export default function DashboardPage() {
         setDiagnostico(diagData);
       }
 
-      // Erros pendentes
       const { count } = await supabase
         .from('caderno_erros')
         .select('*', { count: 'exact', head: true })
@@ -116,12 +111,10 @@ export default function DashboardPage() {
       
       setErrosPendentes(count || 0);
 
-      // Conquistas
       const todasConquistas = await getConquistasUsuario(supabase, user.id);
       const desbloqueadas = todasConquistas.filter(c => c.desbloqueada);
       setTotalConquistas({ desbloqueadas: desbloqueadas.length, total: todasConquistas.length });
       
-      // Últimas 3 conquistas desbloqueadas
       const recentes = desbloqueadas
         .sort((a, b) => new Date(b.desbloqueada_em || 0).getTime() - new Date(a.desbloqueada_em || 0).getTime())
         .slice(0, 3);
@@ -176,7 +169,6 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Notificação de Conquista */}
       {conquistaAtual && (
         <ConquistaNotification 
           conquista={conquistaAtual} 
@@ -184,7 +176,6 @@ export default function DashboardPage() {
         />
       )}
 
-      {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
@@ -203,7 +194,6 @@ export default function DashboardPage() {
       </header>
 
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-        {/* Card de Nível e XP */}
         {nivelInfo && (
           <div className={`bg-gradient-to-r ${getNivelCor(nivelInfo.nivel)} rounded-3xl p-6 text-white shadow-lg`}>
             <div className="flex items-center justify-between mb-4">
@@ -222,7 +212,6 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Barra de progresso */}
             <div className="mb-2">
               <div className="flex justify-between text-sm text-white/80 mb-1">
                 <span>Progresso para {nivelInfo.proximoNivel}</span>
@@ -239,7 +228,6 @@ export default function DashboardPage() {
               )}
             </div>
 
-            {/* Streak */}
             {userStats && userStats.streak_atual > 0 && (
               <div className="flex items-center gap-2 mt-4 bg-white/10 rounded-xl px-4 py-2 w-fit">
                 <Flame className="w-5 h-5 text-orange-300" />
@@ -250,10 +238,8 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Dica do Dia */}
         <DicaDoDia />
 
-        {/* Conquistas Recentes */}
         <Link href="/conquistas" className="block bg-white rounded-2xl p-5 border border-gray-100 hover:border-amber-200 transition-all">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -290,7 +276,6 @@ export default function DashboardPage() {
           )}
         </Link>
 
-        {/* Estatísticas Rápidas */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-white rounded-2xl p-4 border border-gray-100">
             <div className="flex items-center gap-2 mb-2">
@@ -325,7 +310,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Diagnóstico */}
         {diagnostico ? (
           <div className="bg-white rounded-2xl p-5 border border-gray-100">
             <div className="flex items-center justify-between">
@@ -360,31 +344,24 @@ export default function DashboardPage() {
           </Link>
         )}
 
-        {/* Ações Rápidas */}
         <div className="space-y-3">
           <h2 className="text-lg font-bold text-gray-900">Estudar</h2>
-          {/* Ações Rápidas */}
-<div className="space-y-3">
-  <h2 className="text-lg font-bold text-gray-900">Estudar</h2>
-  
-  {/* Ranking */}
-  <Link href="/ranking" className="block bg-gradient-to-r from-yellow-500 to-amber-500 rounded-2xl p-5 text-white hover:from-yellow-600 hover:to-amber-600 transition-all">
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-3">
-        <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-          <Trophy className="w-6 h-6" />
-        </div>
-        <div>
-          <p className="font-bold">Ranking</p>
-          <p className="text-white/80 text-sm">Veja sua posição</p>
-        </div>
-      </div>
-      <ChevronRight className="w-6 h-6" />
-    </div>
-  </Link>
-  
-           
-          {/* Batalha Rápida */}
+
+          <Link href="/ranking" className="block bg-gradient-to-r from-yellow-500 to-amber-500 rounded-2xl p-5 text-white hover:from-yellow-600 hover:to-amber-600 transition-all">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                  <Trophy className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="font-bold">Ranking</p>
+                  <p className="text-white/80 text-sm">Veja sua posição</p>
+                </div>
+              </div>
+              <ChevronRight className="w-6 h-6" />
+            </div>
+          </Link>
+
           <Link href="/batalha" className="block bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl p-5 text-white hover:from-amber-600 hover:to-orange-600 transition-all">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -400,7 +377,6 @@ export default function DashboardPage() {
             </div>
           </Link>
 
-          {/* Caderno de Erros */}
           <Link href="/caderno-erros" className="block bg-white rounded-2xl p-5 border border-gray-100 hover:border-red-200 hover:bg-red-50/50 transition-all">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -422,7 +398,6 @@ export default function DashboardPage() {
             </div>
           </Link>
 
-          {/* Módulos ENEM */}
           <Link href="/plataforma/enem" className="block bg-white rounded-2xl p-5 border border-gray-100 hover:border-blue-200 hover:bg-blue-50/50 transition-all">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -439,7 +414,6 @@ export default function DashboardPage() {
           </Link>
         </div>
 
-        {/* Tabela de Níveis */}
         <div className="bg-white rounded-2xl p-5 border border-gray-100">
           <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
             <Star className="w-5 h-5 text-amber-500" />
