@@ -234,7 +234,6 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Meta Diária */}
         <MetaDiaria />
 
         <DicaDoDia />
@@ -273,6 +272,22 @@ export default function DashboardPage() {
           ) : (
             <p className="text-gray-400 text-sm">Nenhuma conquista ainda. Continue estudando!</p>
           )}
+        </Link>
+
+        {/* Link para Relatório Semanal */}
+        <Link href="/relatorio" className="block bg-white rounded-2xl p-4 border border-gray-100 hover:border-blue-200 transition-all">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                <BarChart3 className="w-6 h-6 text-blue-500" />
+              </div>
+              <div>
+                <p className="font-bold text-gray-900">Relatório Semanal</p>
+                <p className="text-gray-500 text-sm">Veja seu desempenho</p>
+              </div>
+            </div>
+            <ChevronRight className="w-5 h-5 text-gray-400" />
+          </div>
         </Link>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
