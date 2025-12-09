@@ -1,11 +1,10 @@
-
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { ArrowLeft, Clock, Trophy, Target, TrendingUp, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Clock, Trophy, Target, TrendingUp, CheckCircle, XCircle } from 'lucide-react';
 import { adicionarXP } from '@/lib/xp-system';
 import MathText from '@/components/MathText';
 
@@ -45,11 +44,70 @@ export default function SimuladoPage() {
   const [respostas, setRespostas] = useState<Resposta[]>([]);
   const [respondida, setRespondida] = useState(false);
   const [respostaSelecionada, setRespostaSelecionada] = useState<string | null>(null);
-  const [tempoRestante, setTempoRestante] = useState(45 * 60); // 45 minutos
+  const [tempoRestante, setTempoRestante] = useState(45 * 60);
   const [moduloNome, setModuloNome] = useState('');
   const [userId, setUserId] = useState<string | null>(null);
   const [notaTRI, setNotaTRI] = useState(0);
   const [analise, setAnalise] = useState({ facil: { total: 0, acertos: 0 }, medio: { total: 0, acertos: 0 }, dificil: { total: 0, acertos: 0 } });
+
+  const calcularNotaTRI = useCallback((todasRespostas: Resposta[]) => {
+    const analiseTemp = {
+      facil: { total: 0, acertos: 0 },
+      medio: { total: 0, acertos: 0 },
+      dificil: { total: 0, acertos: 0 }
+    };
+
+    todasRespostas.forEach(r => {
+      const dif = r.dificuldade as 'facil' | 'medio' | 'dificil';
+      if (analiseTemp[dif]) {
+        analiseTemp[dif].total++;
+        if (r.correta) analiseTemp[dif].acertos++;
+      }
+    });
+
+    setAnalise(analiseTemp);
+
+    let nota = 400;
+    nota += analiseTemp.facil.acertos * 15;
+    nota += analiseTemp.medio.acertos * 35;
+    nota += analiseTemp.dificil.acertos * 50;
+
+    const taxaFacil = analiseTemp.facil.total > 0 ? analiseTemp.facil.acertos / analiseTemp.facil.total : 0;
+    const taxaDificil = analiseTemp.dificil.total > 0 ? analiseTemp.dificil.acertos / analiseTemp.dificil.total : 0;
+    
+    if (taxaDificil > taxaFacil + 0.3) {
+      nota -= 30;
+    }
+
+    nota = Math.max(400, Math.min(900, nota));
+
+    return Math.round(nota);
+  }, []);
+
+  const finalizarSimulado = useCallback(async () => {
+    if (!userId) return;
+
+    const nota = calcularNotaTRI(respostas);
+    setNotaTRI(nota);
+
+    let xp = 50;
+    if (nota >= 700) xp = 150;
+    else if (nota >= 600) xp = 100;
+    else if (nota >= 500) xp = 75;
+
+    await adicionarXP(supabase, userId, xp, `Simulado: ${moduloNome}`);
+
+    await supabase.from('simulado_resultados').insert({
+      user_id: userId,
+      modulo_id: moduloId,
+      nota_tri: nota,
+      total_questoes: questoes.length,
+      total_acertos: respostas.filter(r => r.correta).length,
+      tempo_usado: (45 * 60) - tempoRestante
+    }).select();
+
+    setFase('resultado');
+  }, [userId, respostas, questoes, tempoRestante, moduloId, moduloNome, calcularNotaTRI, supabase]);
 
   useEffect(() => {
     async function checkAuth() {
@@ -60,7 +118,6 @@ export default function SimuladoPage() {
       }
       setUserId(user.id);
 
-      // Buscar nome do módulo
       const { data: moduloData } = await supabase
         .from('modulos')
         .select('titulo')
@@ -76,7 +133,6 @@ export default function SimuladoPage() {
     checkAuth();
   }, [supabase, router, moduloId]);
 
-  // Timer
   useEffect(() => {
     if (fase !== 'jogando' || tempoRestante <= 0) return;
 
@@ -91,7 +147,7 @@ export default function SimuladoPage() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [fase, tempoRestante]);
+  }, [fase, tempoRestante, finalizarSimulado]);
 
   const formatarTempo = (segundos: number) => {
     const min = Math.floor(segundos / 60);
@@ -100,40 +156,26 @@ export default function SimuladoPage() {
   };
 
   const carregarQuestoes = async () => {
-    // Buscar aulas do módulo
-    const { data: aulas } = await supabase
-      .from('aulas')
-      .select('id')
-      .eq('modulo_id', moduloId);
-
-    if (!aulas || aulas.length === 0) return;
-
-    const aulasIds = aulas.map(a => a.id);
-
-    // Buscar questões de todas as aulas do módulo
+    // Buscar questões exclusivas do simulado
     const { data: questoesData } = await supabase
       .from('questoes')
       .select('*')
-      .in('aula_id', aulasIds)
+      .eq('tipo', 'simulado')
       .eq('ativo', true);
 
     if (questoesData && questoesData.length > 0) {
-      // Separar por dificuldade
       const faceis = questoesData.filter(q => q.dificuldade === 'facil');
       const medias = questoesData.filter(q => q.dificuldade === 'medio');
       const dificeis = questoesData.filter(q => q.dificuldade === 'dificil');
 
-      // Embaralhar cada grupo
-      const shuffle = (arr: any[]) => arr.sort(() => Math.random() - 0.5);
+      const shuffle = (arr: Questao[]) => arr.sort(() => Math.random() - 0.5);
 
-      // Pegar 10 de cada (ou o máximo disponível)
       const selecionadas = [
         ...shuffle(faceis).slice(0, 10),
         ...shuffle(medias).slice(0, 10),
         ...shuffle(dificeis).slice(0, 10)
       ];
 
-      // Embaralhar todas juntas
       setQuestoes(shuffle(selecionadas));
     }
   };
@@ -176,75 +218,6 @@ export default function SimuladoPage() {
     }
   };
 
-  const calcularNotaTRI = useCallback((todasRespostas: Resposta[]) => {
-    // Análise por dificuldade
-    const analiseTemp = {
-      facil: { total: 0, acertos: 0 },
-      medio: { total: 0, acertos: 0 },
-      dificil: { total: 0, acertos: 0 }
-    };
-
-    todasRespostas.forEach(r => {
-      const dif = r.dificuldade as 'facil' | 'medio' | 'dificil';
-      if (analiseTemp[dif]) {
-        analiseTemp[dif].total++;
-        if (r.correta) analiseTemp[dif].acertos++;
-      }
-    });
-
-    setAnalise(analiseTemp);
-
-    // Cálculo TRI simplificado
-    // Base: 400 pontos
-    // Fáceis: +15 pontos cada acerto
-    // Médias: +35 pontos cada acerto
-    // Difíceis: +50 pontos cada acerto
-    let nota = 400;
-    nota += analiseTemp.facil.acertos * 15;
-    nota += analiseTemp.medio.acertos * 35;
-    nota += analiseTemp.dificil.acertos * 50;
-
-    // Penalidade por incoerência (errar fácil e acertar difícil)
-    const taxaFacil = analiseTemp.facil.total > 0 ? analiseTemp.facil.acertos / analiseTemp.facil.total : 0;
-    const taxaDificil = analiseTemp.dificil.total > 0 ? analiseTemp.dificil.acertos / analiseTemp.dificil.total : 0;
-    
-    if (taxaDificil > taxaFacil + 0.3) {
-      nota -= 30; // Penalidade por incoerência
-    }
-
-    // Limitar entre 400 e 900
-    nota = Math.max(400, Math.min(900, nota));
-
-    return Math.round(nota);
-  }, []);
-
-  const finalizarSimulado = useCallback(async () => {
-    if (!userId) return;
-
-    const nota = calcularNotaTRI(respostas);
-    setNotaTRI(nota);
-
-    // Calcular XP baseado na nota
-    let xp = 50; // Base
-    if (nota >= 700) xp = 150;
-    else if (nota >= 600) xp = 100;
-    else if (nota >= 500) xp = 75;
-
-    await adicionarXP(supabase, userId, xp, `Simulado: ${moduloNome}`);
-
-    // Salvar resultado do simulado
-    await supabase.from('simulado_resultados').insert({
-      user_id: userId,
-      modulo_id: moduloId,
-      nota_tri: nota,
-      total_questoes: questoes.length,
-      total_acertos: respostas.filter(r => r.correta).length,
-      tempo_usado: (45 * 60) - tempoRestante
-    }).select();
-
-    setFase('resultado');
-  }, [userId, respostas, questoes, tempoRestante, moduloId, moduloNome, calcularNotaTRI, supabase]);
-
   const getNivelNota = (nota: number) => {
     if (nota >= 800) return { nivel: 'Elite', cor: 'text-purple-600', bg: 'bg-purple-100', emoji: '👑' };
     if (nota >= 700) return { nivel: 'Avançado', cor: 'text-red-600', bg: 'bg-red-100', emoji: '🔥' };
@@ -275,7 +248,6 @@ export default function SimuladoPage() {
     );
   }
 
-  // Tela Inicial
   if (fase === 'inicio') {
     return (
       <div className="min-h-screen bg-gradient-to-b from-yellow-500 to-orange-500">
@@ -296,7 +268,7 @@ export default function SimuladoPage() {
             <ul className="text-left space-y-3 text-white/90">
               <li className="flex items-center gap-3">
                 <Target className="w-5 h-5" />
-                <span>30 questões mistas</span>
+                <span>30 questões exclusivas</span>
               </li>
               <li className="flex items-center gap-3">
                 <Clock className="w-5 h-5" />
@@ -314,7 +286,7 @@ export default function SimuladoPage() {
           </div>
 
           <div className="bg-white/10 rounded-2xl p-4 mb-8 max-w-sm mx-auto">
-            <p className="text-white/70 text-sm">⚠️ Ao iniciar, o tempo começa a contar. Boa prova!</p>
+            <p className="text-white/70 text-sm">⚠️ Questões inéditas estilo ENEM! O tempo começa ao iniciar.</p>
           </div>
 
           <button
@@ -328,7 +300,6 @@ export default function SimuladoPage() {
     );
   }
 
-  // Tela de Resultado
   if (fase === 'resultado') {
     const acertos = respostas.filter(r => r.correta).length;
     const nivelInfo = getNivelNota(notaTRI);
@@ -337,7 +308,6 @@ export default function SimuladoPage() {
       <div className="min-h-screen bg-gradient-to-b from-yellow-500 to-orange-500">
         <main className="px-4 py-8 text-white">
           <div className="max-w-lg mx-auto">
-            {/* Nota TRI */}
             <div className="text-center mb-8">
               <div className="w-24 h-24 bg-white/20 rounded-3xl flex items-center justify-center mx-auto mb-4">
                 <span className="text-5xl">{nivelInfo.emoji}</span>
@@ -346,7 +316,6 @@ export default function SimuladoPage() {
               <p className="text-white/80">{moduloNome}</p>
             </div>
 
-            {/* Card Nota */}
             <div className="bg-white rounded-3xl p-6 mb-6 text-gray-900">
               <div className="text-center mb-6">
                 <p className="text-sm text-gray-500 mb-1">Sua Nota TRI Estimada</p>
@@ -356,7 +325,6 @@ export default function SimuladoPage() {
                 </span>
               </div>
 
-              {/* Barra visual */}
               <div className="mb-6">
                 <div className="flex justify-between text-xs text-gray-400 mb-1">
                   <span>400</span>
@@ -370,7 +338,6 @@ export default function SimuladoPage() {
                 </div>
               </div>
 
-              {/* Resumo */}
               <div className="grid grid-cols-2 gap-4 mb-6">
                 <div className="bg-gray-50 rounded-xl p-4 text-center">
                   <p className="text-3xl font-black text-gray-900">{acertos}/{questoes.length}</p>
@@ -382,7 +349,6 @@ export default function SimuladoPage() {
                 </div>
               </div>
 
-              {/* Análise por dificuldade */}
               <div className="space-y-3">
                 <p className="font-bold text-gray-700">📊 Desempenho por Nível</p>
                 
@@ -426,7 +392,6 @@ export default function SimuladoPage() {
                 </div>
               </div>
 
-              {/* Dica */}
               <div className="mt-6 p-4 bg-blue-50 rounded-xl">
                 <p className="text-sm text-blue-700">
                   {notaTRI >= 700 
@@ -441,7 +406,6 @@ export default function SimuladoPage() {
               </div>
             </div>
 
-            {/* Botões */}
             <div className="flex gap-4">
               <button
                 onClick={() => {
@@ -466,7 +430,6 @@ export default function SimuladoPage() {
     );
   }
 
-  // Tela de Questões
   const questao = questoes[questaoAtual];
   if (!questao) {
     return (
@@ -478,7 +441,6 @@ export default function SimuladoPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header com Timer */}
       <header className="bg-white border-b-4 border-yellow-500 px-4 py-3 sticky top-0 z-10">
         <div className="flex items-center justify-between max-w-2xl mx-auto">
           <div className="flex items-center gap-2">
@@ -488,7 +450,6 @@ export default function SimuladoPage() {
             </span>
           </div>
           
-          {/* Timer */}
           <div className={`flex items-center gap-2 px-4 py-2 rounded-full font-mono font-bold ${
             tempoRestante <= 300 ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-700'
           }`}>
@@ -498,7 +459,6 @@ export default function SimuladoPage() {
         </div>
       </header>
 
-      {/* Barra de progresso */}
       <div className="h-2 bg-gray-200">
         <div 
           className="h-full bg-yellow-500 transition-all"
@@ -507,7 +467,6 @@ export default function SimuladoPage() {
       </div>
 
       <main className="max-w-2xl mx-auto px-4 py-6">
-        {/* Badge de dificuldade */}
         <div className="flex items-center gap-2 mb-4">
           <span className={`px-3 py-1 rounded-full text-xs font-bold ${
             questao.dificuldade === 'facil' ? 'bg-emerald-100 text-emerald-700' :
@@ -519,12 +478,10 @@ export default function SimuladoPage() {
           </span>
         </div>
 
-        {/* Enunciado */}
         <div className="bg-white rounded-2xl p-6 mb-6 border border-gray-100">
           <MathText text={questao.enunciado} className="text-gray-900" />
         </div>
 
-        {/* Alternativas */}
         <div className="space-y-3">
           {['a', 'b', 'c', 'd', 'e'].map((letra) => {
             const texto = questao[`alternativa_${letra}` as keyof Questao] as string;
@@ -554,7 +511,6 @@ export default function SimuladoPage() {
           })}
         </div>
 
-        {/* Feedback */}
         {respondida && (
           <div className={`mt-6 p-4 rounded-xl ${
             respostaSelecionada?.toUpperCase() === questao.resposta_correta.toUpperCase()
@@ -580,17 +536,12 @@ export default function SimuladoPage() {
           </div>
         )}
 
-        {/* Botão próxima */}
         {respondida && (
           <button
             onClick={proximaQuestao}
             className="w-full mt-6 bg-yellow-500 text-white font-bold py-4 rounded-xl hover:bg-yellow-600 transition-all flex items-center justify-center gap-2"
           >
-            {questaoAtual < questoes.length - 1 ? (
-              <>Próxima Questão</>
-            ) : (
-              <>Ver Resultado</>
-            )}
+            {questaoAtual < questoes.length - 1 ? 'Próxima Questão' : 'Ver Resultado'}
           </button>
         )}
       </main>
