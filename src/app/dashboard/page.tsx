@@ -183,12 +183,12 @@ export default function DashboardPage() {
               <h1 className="text-xl font-bold text-gray-900">Olá, {userName}! 👋</h1>
               <p className="text-sm text-gray-500">Continue sua jornada de estudos</p>
             </div>
-            <button
-              onClick={handleLogout}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
-            >
-              <LogOut className="w-5 h-5" />
-            </button>
+           <Link
+  href="/perfil"
+  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+>
+  <User className="w-5 h-5" />
+</Link>
           </div>
         </div>
       </header>
