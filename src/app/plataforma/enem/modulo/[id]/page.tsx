@@ -257,13 +257,13 @@ export default function ModuloPage() {
           <h2 className="text-lg font-bold text-gray-900 mb-4">🏆 Simulado do Módulo</h2>
           
           <div className={`bg-white rounded-2xl border-2 p-6 ${
-            progressoGeral >= 50 ? 'border-yellow-300' : 'border-gray-200'
+            progressoGeral >= 80 ? 'border-yellow-300' : 'border-gray-200'
           }`}>
             <div className="flex items-center gap-4">
               <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${
-                progressoGeral >= 50 ? 'bg-yellow-100' : 'bg-gray-100'
+                progressoGeral >= 80 ? 'bg-yellow-100' : 'bg-gray-100'
               }`}>
-                {progressoGeral >= 50 ? (
+                {progressoGeral >= 80 ? (
                   <Trophy className="w-8 h-8 text-yellow-600" />
                 ) : (
                   <Lock className="w-8 h-8 text-gray-400" />
@@ -272,13 +272,13 @@ export default function ModuloPage() {
               <div className="flex-1">
                 <h3 className="font-bold text-gray-900">Simulado Final</h3>
                 <p className="text-sm text-gray-500">
-                  {progressoGeral >= 50 
-                    ? '30 questões mistas • 45 minutos'
-                    : `Complete ${50 - progressoGeral}% mais para desbloquear`
+                  {progressoGeral >= 80 
+                    ? '30 questões mistas • 45 minutos • Nota TRI'
+                    : `Complete ${80 - progressoGeral}% mais para desbloquear`
                   }
                 </p>
               </div>
-              {progressoGeral >= 50 ? (
+              {progressoGeral >= 80 ? (
                 <Link
                   href={`/plataforma/enem/modulo/${moduloId}/simulado`}
                   className="bg-yellow-500 text-white font-bold px-6 py-3 rounded-xl hover:bg-yellow-600 transition-all"
@@ -287,7 +287,7 @@ export default function ModuloPage() {
                 </Link>
               ) : (
                 <div className="text-gray-400 font-medium">
-                  🔒 {progressoGeral}% / 50%
+                  🔒 {progressoGeral}% / 80%
                 </div>
               )}
             </div>
