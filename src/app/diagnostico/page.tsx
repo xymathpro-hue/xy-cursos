@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -59,7 +58,6 @@ export default function DiagnosticoPage() {
       }
       setUserId(user.id);
 
-      // Buscar questões por dificuldade
       const { data: faceis } = await supabase
         .from('questoes')
         .select('*')
@@ -81,8 +79,7 @@ export default function DiagnosticoPage() {
         .eq('dificuldade', 'dificil')
         .limit(30);
 
-      // Embaralhar e pegar 10 de cada
-      const shuffleArray = (arr: any[]) => arr.sort(() => Math.random() - 0.5);
+      const shuffleArray = (arr: Questao[]) => arr.sort(() => Math.random() - 0.5);
       
       const questoesSelecionadas = [
         ...shuffleArray(faceis || []).slice(0, 10),
@@ -90,7 +87,6 @@ export default function DiagnosticoPage() {
         ...shuffleArray(dificeis || []).slice(0, 10)
       ];
 
-      // Embaralhar todas as questões
       setQuestoes(shuffleArray(questoesSelecionadas));
       setLoading(false);
     }
@@ -107,7 +103,6 @@ export default function DiagnosticoPage() {
 
   const handleSelecionarResposta = (letra: string) => {
     if (finalizado) return;
-    
     setRespostas(prev => {
       const outras = prev.filter(r => r.questaoId !== questao.id);
       return [...outras, { questaoId: questao.id, letra, dificuldade: questao.dificuldade }];
@@ -134,7 +129,6 @@ export default function DiagnosticoPage() {
     if (!userId) return;
     setSalvando(true);
 
-    // Salvar respostas
     for (const resp of respostas) {
       const q = questoes.find(quest => quest.id === resp.questaoId);
       if (q) {
@@ -189,7 +183,6 @@ export default function DiagnosticoPage() {
     const percentualMedio = totalMedio > 0 ? Math.round((acertosMedio / totalMedio) * 100) : 0;
     const percentualDificil = totalDificil > 0 ? Math.round((acertosDificil / totalDificil) * 100) : 0;
 
-    // Determinar nível
     let nivel = 'Iniciante';
     let nivelCor = 'text-amber-600';
     let nivelBg = 'bg-amber-100';
@@ -217,20 +210,7 @@ export default function DiagnosticoPage() {
       notaTRI = 300 + percentualGeral * 3.75;
     }
 
-    return {
-      totalAcertos,
-      percentualGeral,
-      acertosFacil,
-      acertosMedio,
-      acertosDificil,
-      percentualFacil,
-      percentualMedio,
-      percentualDificil,
-      nivel,
-      nivelCor,
-      nivelBg,
-      notaTRI: Math.round(notaTRI)
-    };
+    return { totalAcertos, percentualGeral, acertosFacil, acertosMedio, acertosDificil, percentualFacil, percentualMedio, percentualDificil, nivel, nivelCor, nivelBg, notaTRI: Math.round(notaTRI) };
   };
 
   const getDificuldadeCor = (dif: string) => {
@@ -256,7 +236,6 @@ export default function DiagnosticoPage() {
       </div>
     );
   }
-
   // Tela inicial
   if (!iniciado) {
     return (
@@ -292,7 +271,7 @@ export default function DiagnosticoPage() {
                 </div>
               </div>
               <p className="text-violet-700 text-sm">
-                30 questões para avaliar seu conhecimento e criar um plano de estudos personalizado
+                30 questões para avaliar seu conhecimento
               </p>
             </div>
 
@@ -335,7 +314,7 @@ export default function DiagnosticoPage() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-violet-500 to-purple-600 p-4">
         <div className="max-w-2xl mx-auto">
-          <div className="bg-white rounded-3xl p-8 text-center shadow-2xl mb-4">
+          <div className="bg-white rounded-3xl p-8 text-center shadow-2xl">
             <div className={`w-20 h-20 ${resultado.nivelBg} rounded-full flex items-center justify-center mx-auto mb-4`}>
               <Award className={`w-10 h-10 ${resultado.nivelCor}`} />
             </div>
@@ -343,7 +322,6 @@ export default function DiagnosticoPage() {
             <h2 className="text-2xl font-black text-gray-900 mb-1">Diagnóstico Concluído!</h2>
             <p className="text-gray-500 mb-6">Seu perfil de aprendizagem</p>
 
-            {/* Nível */}
             <div className={`${resultado.nivelBg} rounded-2xl p-6 mb-6`}>
               <p className="text-sm text-gray-500 mb-1">Seu Nível</p>
               <p className={`text-3xl font-black ${resultado.nivelCor}`}>{resultado.nivel}</p>
@@ -355,7 +333,6 @@ export default function DiagnosticoPage() {
               </div>
             </div>
 
-            {/* Resultado geral */}
             <div className="grid grid-cols-3 gap-4 mb-6">
               <div className="bg-emerald-50 rounded-xl p-4">
                 <p className="text-2xl font-bold text-emerald-600">{resultado.totalAcertos}</p>
@@ -371,7 +348,6 @@ export default function DiagnosticoPage() {
               </div>
             </div>
 
-            {/* Desempenho por nível */}
             <div className="bg-gray-50 rounded-2xl p-4 mb-6">
               <p className="text-sm font-medium text-gray-700 mb-4">Desempenho por Dificuldade</p>
               
@@ -382,10 +358,7 @@ export default function DiagnosticoPage() {
                     <span className="text-gray-600">{resultado.acertosFacil}/10 ({resultado.percentualFacil}%)</span>
                   </div>
                   <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-emerald-500 transition-all"
-                      style={{ width: `${resultado.percentualFacil}%` }}
-                    />
+                    <div className="h-full bg-emerald-500" style={{ width: `${resultado.percentualFacil}%` }} />
                   </div>
                 </div>
 
@@ -395,10 +368,7 @@ export default function DiagnosticoPage() {
                     <span className="text-gray-600">{resultado.acertosMedio}/10 ({resultado.percentualMedio}%)</span>
                   </div>
                   <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-amber-500 transition-all"
-                      style={{ width: `${resultado.percentualMedio}%` }}
-                    />
+                    <div className="h-full bg-amber-500" style={{ width: `${resultado.percentualMedio}%` }} />
                   </div>
                 </div>
 
@@ -408,64 +378,36 @@ export default function DiagnosticoPage() {
                     <span className="text-gray-600">{resultado.acertosDificil}/10 ({resultado.percentualDificil}%)</span>
                   </div>
                   <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-red-500 transition-all"
-                      style={{ width: `${resultado.percentualDificil}%` }}
-                    />
+                    <div className="h-full bg-red-500" style={{ width: `${resultado.percentualDificil}%` }} />
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Recomendações */}
             <div className="bg-violet-50 rounded-2xl p-4 mb-6 text-left">
-              <p className="text-sm font-medium text-violet-800 mb-3">📋 Plano de Estudos Recomendado:</p>
+              <p className="text-sm font-medium text-violet-800 mb-3">📋 Plano de Estudos:</p>
               <ul className="space-y-2 text-sm text-violet-700">
                 {resultado.percentualFacil < 80 && (
-                  <li className="flex items-start gap-2">
-                    <span>•</span>
-                    <span>Reforce os conceitos básicos com questões de nível Fácil</span>
-                  </li>
+                  <li>• Reforce conceitos básicos com questões Fáceis</li>
                 )}
                 {resultado.percentualMedio < 60 && (
-                  <li className="flex items-start gap-2">
-                    <span>•</span>
-                    <span>Pratique mais questões de nível Médio para consolidar</span>
-                  </li>
-                )}
-                {resultado.percentualDificil < 40 && (
-                  <li className="flex items-start gap-2">
-                    <span>•</span>
-                    <span>Depois de dominar o básico, avance para questões Difíceis</span>
-                  </li>
+                  <li>• Pratique mais questões de nível Médio</li>
                 )}
                 {resultado.percentualGeral >= 70 && (
-                  <li className="flex items-start gap-2">
-                    <span>•</span>
-                    <span>Ótimo desempenho! Foque nas Batalhas Rápidas para ganhar velocidade</span>
-                  </li>
+                  <li>• Ótimo! Foque nas Batalhas Rápidas para velocidade</li>
                 )}
-                <li className="flex items-start gap-2">
-                  <span>•</span>
-                  <span>Revise os {erros} erros no Caderno de Erros</span>
-                </li>
+                <li>• Revise os {erros} erros no Caderno de Erros</li>
               </ul>
             </div>
 
             <div className="space-y-3">
               {erros > 0 && (
-                <Link
-                  href="/caderno-erros"
-                  className="w-full py-3 rounded-xl border-2 border-red-200 text-red-600 font-medium hover:bg-red-50 flex items-center justify-center gap-2"
-                >
+                <Link href="/caderno-erros" className="w-full py-3 rounded-xl border-2 border-red-200 text-red-600 font-medium hover:bg-red-50 flex items-center justify-center gap-2">
                   <BookOpen className="w-5 h-5" />
                   Revisar {erros} Erros
                 </Link>
               )}
-              <Link
-                href="/dashboard"
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 text-white font-bold hover:from-violet-600 hover:to-purple-600 flex items-center justify-center gap-2"
-              >
+              <Link href="/dashboard" className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 text-white font-bold hover:from-violet-600 hover:to-purple-600 flex items-center justify-center gap-2">
                 <Home className="w-5 h-5" />
                 Ir para Dashboard
               </Link>
@@ -490,7 +432,7 @@ export default function DiagnosticoPage() {
               <Target className="w-6 h-6 text-white" />
               <span className="text-white font-bold">Diagnóstico</span>
             </div>
-            <div className="text-white text-sm">{respostas.length}/{questoes.length} respondidas</div>
+            <div className="text-white text-sm">{respostas.length}/{questoes.length}</div>
           </div>
 
           <div className="mt-3">
@@ -499,16 +441,14 @@ export default function DiagnosticoPage() {
               <span>{Math.round(progresso)}%</span>
             </div>
             <div className="h-2 bg-white/20 rounded-full overflow-hidden">
-              <div className="h-full bg-white transition-all duration-300" style={{ width: `${progresso}%` }}></div>
+              <div className="h-full bg-white transition-all" style={{ width: `${progresso}%` }}></div>
             </div>
           </div>
 
-          {/* Navegação por números */}
           <div className="mt-3 flex gap-1 overflow-x-auto pb-2">
             {questoes.map((q, index) => {
               const respondida = respostas.some(r => r.questaoId === q.id);
               const isAtual = index === questaoAtual;
-              
               let bgColor = 'bg-white/20';
               if (isAtual) bgColor = 'bg-white';
               else if (respondida) bgColor = 'bg-emerald-400';
@@ -517,7 +457,7 @@ export default function DiagnosticoPage() {
                 <button
                   key={q.id}
                   onClick={() => handleIrParaQuestao(index)}
-                  className={`w-7 h-7 rounded-lg text-xs font-medium flex-shrink-0 transition-all ${bgColor} ${isAtual ? 'text-violet-600' : 'text-white'}`}
+                  className={`w-7 h-7 rounded-lg text-xs font-medium flex-shrink-0 ${bgColor} ${isAtual ? 'text-violet-600' : 'text-white'}`}
                 >
                   {index + 1}
                 </button>
@@ -531,4 +471,60 @@ export default function DiagnosticoPage() {
         <div className="max-w-4xl mx-auto">
           <div className="bg-white rounded-3xl p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
-              <span className={`px-3 py-1 rounded-full text-xs fo
+              <span className={`px-3 py-1 rounded-full text-xs font-medium ${getDificuldadeCor(questao.dificuldade)}`}>
+                {getNomeDificuldade(questao.dificuldade)}
+              </span>
+              <span className="text-sm text-gray-400">Questão {questaoAtual + 1}</span>
+            </div>
+
+            <p className="text-gray-800 text-lg mb-6 leading-relaxed whitespace-pre-line">{questao.enunciado}</p>
+
+            <div className="space-y-3">
+              {['A', 'B', 'C', 'D', 'E'].map(letra => {
+                const texto = questao[`alternativa_${letra.toLowerCase()}` as keyof Questao] as string;
+                if (!texto) return null;
+                const isSelected = respostaAtual === letra;
+
+                return (
+                  <button
+                    key={`${questao.id}-${letra}`}
+                    onClick={() => handleSelecionarResposta(letra)}
+                    className={`w-full p-4 rounded-xl border-2 text-left transition-all ${isSelected ? 'border-violet-500 bg-violet-50' : 'border-gray-200 hover:border-violet-300'}`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 ${isSelected ? 'bg-violet-500 text-white' : 'bg-gray-100 text-gray-600'}`}>{letra}</span>
+                      <span className="text-gray-700 pt-0.5">{texto}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between mt-6">
+            <button onClick={handleAnterior} disabled={questaoAtual === 0} className={`flex items-center gap-2 px-4 py-2 rounded-xl ${questaoAtual === 0 ? 'text-white/30' : 'text-white hover:bg-white/10'}`}>
+              <ArrowLeft className="w-5 h-5" />
+              Anterior
+            </button>
+
+            {questaoAtual < questoes.length - 1 ? (
+              <button onClick={handleProxima} className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold bg-white text-violet-600 hover:bg-white/90">
+                Próxima
+                <ArrowRight className="w-5 h-5" />
+              </button>
+            ) : (
+              <button onClick={handleFinalizar} disabled={salvando} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold ${todasRespondidas ? 'bg-emerald-500 text-white' : 'bg-amber-500 text-white'}`}>
+                {salvando ? 'Salvando...' : todasRespondidas ? 'Ver Resultado' : `Finalizar (${respostas.length}/${questoes.length})`}
+                <CheckCircle className="w-5 h-5" />
+              </button>
+            )}
+          </div>
+
+          {questaoAtual === questoes.length - 1 && !todasRespondidas && (
+            <p className="text-white/80 text-sm text-center mt-4">⚠️ Faltam {questoes.length - respostas.length} questão(ões)</p>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+        }
