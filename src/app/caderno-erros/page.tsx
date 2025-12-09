@@ -4,126 +4,119 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { ArrowLeft, BookX, CheckCircle, Eye, EyeOff, RotateCcw, Filter, Trash2 } from 'lucide-react';
+import { 
+  ArrowLeft, 
+  BookOpen, 
+  CheckCircle, 
+  XCircle,
+  ChevronDown,
+  ChevronUp,
+  Trash2,
+  Eye,
+  EyeOff,
+  Filter
+} from 'lucide-react';
 
 interface ErroItem {
   id: string;
   questao_id: string;
+  resposta_usuario: string;
   revisado: boolean;
   created_at: string;
   questao: {
     id: string;
+    numero: number;
     enunciado: string;
-    alternativas: string[];
-    resposta_correta: number;
+    alternativa_a: string;
+    alternativa_b: string;
+    alternativa_c: string;
+    alternativa_d: string;
+    alternativa_e: string;
+    resposta_correta: string;
     explicacao: string;
     dificuldade: string;
-    fase: {
-      modulo: {
-        titulo: string;
-        icone: string;
-      };
-    };
+    aula_id: string;
   };
-  resposta_usuario: string;
 }
 
 export default function CadernoErrosPage() {
   const router = useRouter();
   const supabase = createClientComponentClient();
-  
+
   const [erros, setErros] = useState<ErroItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filtro, setFiltro] = useState<'todos' | 'pendentes' | 'revisados'>('pendentes');
-  const [questaoExpandida, setQuestaoExpandida] = useState<string | null>(null);
+  const [expandido, setExpandido] = useState<string | null>(null);
   const [mostrarResolucao, setMostrarResolucao] = useState<string | null>(null);
 
   useEffect(() => {
-    async function fetchErros() {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        router.push('/login');
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from('caderno_erros')
-        .select(`
-          id,
-          questao_id,
-          revisado,
-          created_at,
-          resposta_usuario,
-          questoes (
-            id,
-            enunciado,
-            alternativas,
-            resposta_correta,
-            explicacao,
-            dificuldade,
-            fases (
-              modulos (
-                titulo,
-                icone
-              )
-            )
-          )
-        `)
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (data) {
-        const errosFormatados = data.map((item: any) => ({
-          id: item.id,
-          questao_id: item.questao_id,
-          revisado: item.revisado,
-          created_at: item.created_at,
-          resposta_usuario: item.resposta_usuario,
-          questao: {
-            id: item.questoes?.id,
-            enunciado: item.questoes?.enunciado,
-            alternativas: item.questoes?.alternativas || [],
-            resposta_correta: item.questoes?.resposta_correta,
-            explicacao: item.questoes?.explicacao,
-            dificuldade: item.questoes?.dificuldade,
-            fase: {
-              modulo: {
-                titulo: item.questoes?.fases?.modulos?.titulo || 'Módulo',
-                icone: item.questoes?.fases?.modulos?.icone || '📚',
-              }
-            }
-          }
-        }));
-        setErros(errosFormatados);
-      }
-
-      setLoading(false);
-    }
-
     fetchErros();
-  }, [supabase, router]);
+  }, []);
 
-  const marcarRevisado = async (erroId: string, revisado: boolean) => {
-    const { error } = await supabase
-      .from('caderno_erros')
-      .update({ revisado, updated_at: new Date().toISOString() })
-      .eq('id', erroId);
-
-    if (!error) {
-      setErros(erros.map(e => e.id === erroId ? { ...e, revisado } : e));
+  async function fetchErros() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      router.push('/login');
+      return;
     }
+
+    const { data, error } = await supabase
+      .from('caderno_erros')
+      .select(`
+        id,
+        questao_id,
+        resposta_usuario,
+        revisado,
+        created_at,
+        questao:questoes (
+          id,
+          numero,
+          enunciado,
+          alternativa_a,
+          alternativa_b,
+          alternativa_c,
+          alternativa_d,
+          alternativa_e,
+          resposta_correta,
+          explicacao,
+          dificuldade,
+          aula_id
+        )
+      `)
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Erro ao buscar erros:', error);
+    }
+
+    if (data) {
+      // Filtrar itens que têm questão válida
+      const errosValidos = data.filter(item => item.questao !== null) as ErroItem[];
+      setErros(errosValidos);
+    }
+
+    setLoading(false);
+  }
+
+  const handleMarcarRevisado = async (id: string, revisado: boolean) => {
+    await supabase
+      .from('caderno_erros')
+      .update({ revisado: !revisado, updated_at: new Date().toISOString() })
+      .eq('id', id);
+
+    setErros(prev => prev.map(e => 
+      e.id === id ? { ...e, revisado: !revisado } : e
+    ));
   };
 
-  const removerDoCarderno = async (erroId: string) => {
-    const { error } = await supabase
+  const handleRemover = async (id: string) => {
+    await supabase
       .from('caderno_erros')
       .delete()
-      .eq('id', erroId);
+      .eq('id', id);
 
-    if (!error) {
-      setErros(erros.filter(e => e.id !== erroId));
-    }
+    setErros(prev => prev.filter(e => e.id !== id));
   };
 
   const errosFiltrados = erros.filter(e => {
@@ -136,15 +129,20 @@ export default function CadernoErrosPage() {
   const totalRevisados = erros.filter(e => e.revisado).length;
 
   const getDificuldadeCor = (dif: string) => {
-    switch (dif?.toLowerCase()) {
+    switch (dif) {
       case 'facil': return 'bg-emerald-100 text-emerald-700';
-      case 'medio': return 'bg-amber-100 text-amber-700';
       case 'dificil': return 'bg-red-100 text-red-700';
-      default: return 'bg-gray-100 text-gray-700';
+      default: return 'bg-amber-100 text-amber-700';
     }
   };
 
-  const letras = ['A', 'B', 'C', 'D', 'E'];
+  const getNomeDificuldade = (dif: string) => {
+    switch (dif) {
+      case 'facil': return 'Fácil';
+      case 'dificil': return 'Difícil';
+      default: return 'Médio';
+    }
+  };
 
   if (loading) {
     return (
@@ -156,7 +154,6 @@ export default function CadernoErrosPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
@@ -164,10 +161,10 @@ export default function CadernoErrosPage() {
               <ArrowLeft className="w-5 h-5" />
               <span>Voltar</span>
             </Link>
-            <h1 className="font-bold text-gray-900 flex items-center gap-2">
-              <BookX className="w-5 h-5 text-red-500" />
-              Caderno de Erros
-            </h1>
+            <div className="flex items-center gap-2">
+              <BookOpen className="w-5 h-5 text-red-500" />
+              <h1 className="font-bold text-gray-900">Caderno de Erros</h1>
+            </div>
             <div className="w-20"></div>
           </div>
         </div>
@@ -181,11 +178,11 @@ export default function CadernoErrosPage() {
             <p className="text-gray-500 text-sm">Total</p>
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-            <p className="text-3xl font-bold text-red-500">{totalPendentes}</p>
+            <p className="text-3xl font-bold text-red-600">{totalPendentes}</p>
             <p className="text-gray-500 text-sm">Pendentes</p>
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-            <p className="text-3xl font-bold text-emerald-500">{totalRevisados}</p>
+            <p className="text-3xl font-bold text-emerald-600">{totalRevisados}</p>
             <p className="text-gray-500 text-sm">Revisados</p>
           </div>
         </div>
@@ -193,41 +190,48 @@ export default function CadernoErrosPage() {
         {/* Filtros */}
         <div className="flex items-center gap-2 mb-6">
           <Filter className="w-5 h-5 text-gray-400" />
-          <div className="flex gap-2">
-            {[
-              { id: 'pendentes', label: 'Pendentes', count: totalPendentes },
-              { id: 'revisados', label: 'Revisados', count: totalRevisados },
-              { id: 'todos', label: 'Todos', count: erros.length },
-            ].map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setFiltro(f.id as any)}
-                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                  filtro === f.id
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-white border border-gray-200 text-gray-600 hover:border-blue-300'
-                }`}
-              >
-                {f.label} ({f.count})
-              </button>
-            ))}
-          </div>
+          <button
+            onClick={() => setFiltro('pendentes')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              filtro === 'pendentes' 
+                ? 'bg-red-500 text-white' 
+                : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+            }`}
+          >
+            Pendentes ({totalPendentes})
+          </button>
+          <button
+            onClick={() => setFiltro('revisados')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              filtro === 'revisados' 
+                ? 'bg-emerald-500 text-white' 
+                : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+            }`}
+          >
+            Revisados ({totalRevisados})
+          </button>
+          <button
+            onClick={() => setFiltro('todos')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              filtro === 'todos' 
+                ? 'bg-blue-500 text-white' 
+                : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+            }`}
+          >
+            Todos ({erros.length})
+          </button>
         </div>
 
-        {/* Lista de Erros */}
+        {/* Lista de erros */}
         {errosFiltrados.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center">
-            <BookX className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-xl font-bold text-gray-900 mb-2">
-              {filtro === 'pendentes' ? 'Nenhum erro pendente!' : 'Nenhum erro encontrado'}
-            </h3>
-            <p className="text-gray-500 mb-6">
-              {filtro === 'pendentes' 
-                ? 'Você revisou todos os erros. Continue estudando!' 
-                : 'Continue praticando para registrar seus erros aqui.'}
-            </p>
+          <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center">
+            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <XCircle className="w-8 h-8 text-gray-400" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Nenhum erro pendente!</h3>
+            <p className="text-gray-500 mb-6">Você revisou todos os erros. Continue estudando!</p>
             <Link
-              href="/plataforma/enem"
+              href="/dashboard"
               className="inline-flex items-center gap-2 px-6 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600"
             >
               Continuar Estudando
@@ -235,121 +239,140 @@ export default function CadernoErrosPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {errosFiltrados.map((erro) => (
-              <div
-                key={erro.id}
-                className={`bg-white rounded-2xl border overflow-hidden transition-all ${
-                  erro.revisado ? 'border-emerald-200' : 'border-gray-200'
-                }`}
-              >
-                {/* Cabeçalho da questão */}
+            {errosFiltrados.map((erro) => {
+              const isExpandido = expandido === erro.id;
+              const isMostrandoResolucao = mostrarResolucao === erro.id;
+              const questao = erro.questao;
+
+              return (
                 <div 
-                  className="p-4 cursor-pointer hover:bg-gray-50"
-                  onClick={() => setQuestaoExpandida(questaoExpandida === erro.id ? null : erro.id)}
+                  key={erro.id} 
+                  className={`bg-white rounded-xl border-2 overflow-hidden transition-all ${
+                    erro.revisado ? 'border-emerald-200' : 'border-red-200'
+                  }`}
                 >
-                  <div className="flex items-start gap-4">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl ${
-                      erro.revisado ? 'bg-emerald-100' : 'bg-red-100'
-                    }`}>
-                      {erro.revisado ? '✓' : erro.questao.fase?.modulo?.icone || '📚'}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-gray-500 text-sm">{erro.questao.fase?.modulo?.titulo}</span>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getDificuldadeCor(erro.questao.dificuldade)}`}>
-                          {erro.questao.dificuldade || 'Médio'}
-                        </span>
-                        {erro.revisado && (
-                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
-                            ✓ Revisado
+                  {/* Cabeçalho */}
+                  <button
+                    onClick={() => setExpandido(isExpandido ? null : erro.id)}
+                    className="w-full p-4 flex items-center justify-between hover:bg-gray-50"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                        erro.revisado ? 'bg-emerald-100' : 'bg-red-100'
+                      }`}>
+                        {erro.revisado 
+                          ? <CheckCircle className="w-5 h-5 text-emerald-600" /> 
+                          : <XCircle className="w-5 h-5 text-red-600" />
+                        }
+                      </div>
+                      <div className="text-left">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-gray-900">Questão {questao.numero}</p>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getDificuldadeCor(questao.dificuldade)}`}>
+                            {getNomeDificuldade(questao.dificuldade)}
                           </span>
-                        )}
+                        </div>
+                        <p className="text-sm text-gray-500">
+                          Sua: <span className="text-red-600 font-medium">{erro.resposta_usuario}</span> | 
+                          Correta: <span className="text-emerald-600 font-medium">{questao.resposta_correta}</span>
+                        </p>
                       </div>
-                      <p className="text-gray-900 line-clamp-2">{erro.questao.enunciado}</p>
                     </div>
-                  </div>
-                </div>
+                    {isExpandido 
+                      ? <ChevronUp className="w-5 h-5 text-gray-400" /> 
+                      : <ChevronDown className="w-5 h-5 text-gray-400" />
+                    }
+                  </button>
 
-                {/* Conteúdo expandido */}
-                {questaoExpandida === erro.id && (
-                  <div className="border-t border-gray-100 p-4 bg-gray-50">
-                    {/* Enunciado completo */}
-                    <p className="text-gray-700 mb-4">{erro.questao.enunciado}</p>
+                  {/* Conteúdo expandido */}
+                  {isExpandido && (
+                    <div className="p-4 border-t border-gray-100 bg-gray-50">
+                      {/* Enunciado */}
+                      <p className="text-gray-700 mb-4 whitespace-pre-line">{questao.enunciado}</p>
 
-                    {/* Alternativas */}
-                    <div className="space-y-2 mb-4">
-                      {erro.questao.alternativas?.map((alt, idx) => {
-                        const isCorreta = idx === erro.questao.resposta_correta;
-                        const isErrada = erro.resposta_usuario === letras[idx] && !isCorreta;
-                        
-                        return (
-                          <div
-                            key={idx}
-                            className={`p-3 rounded-xl border ${
-                              isCorreta
-                                ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-                                : isErrada
-                                  ? 'bg-red-50 border-red-300 text-red-800'
-                                  : 'bg-white border-gray-200 text-gray-700'
-                            }`}
+                      {/* Alternativas */}
+                      <div className="space-y-2 mb-4">
+                        {['A', 'B', 'C', 'D', 'E'].map(letra => {
+                          const texto = questao[`alternativa_${letra.toLowerCase()}` as keyof typeof questao] as string;
+                          if (!texto) return null;
+                          
+                          const isCorreta = letra === questao.resposta_correta;
+                          const isErrada = letra === erro.resposta_usuario && !isCorreta;
+                          
+                          return (
+                            <div 
+                              key={letra} 
+                              className={`p-3 rounded-xl border ${
+                                isCorreta 
+                                  ? 'bg-emerald-50 border-emerald-300' 
+                                  : isErrada 
+                                    ? 'bg-red-50 border-red-300' 
+                                    : 'bg-white border-gray-200'
+                              }`}
+                            >
+                              <span className={`font-bold mr-2 ${
+                                isCorreta ? 'text-emerald-700' : isErrada ? 'text-red-700' : 'text-gray-700'
+                              }`}>
+                                {letra})
+                              </span>
+                              <span className={
+                                isCorreta ? 'text-emerald-700' : isErrada ? 'text-red-700' : 'text-gray-700'
+                              }>
+                                {texto}
+                              </span>
+                              {isCorreta && <span className="ml-2 text-emerald-600 font-medium">✓ Correta</span>}
+                              {isErrada && <span className="ml-2 text-red-600 font-medium">✗ Sua resposta</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Botão de resolução */}
+                      {questao.explicacao && (
+                        <div className="mb-4">
+                          <button
+                            onClick={() => setMostrarResolucao(isMostrandoResolucao ? null : erro.id)}
+                            className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium"
                           >
-                            <span className="font-bold mr-2">{letras[idx]})</span>
-                            {alt}
-                            {isCorreta && <span className="ml-2">✓ Correta</span>}
-                            {isErrada && <span className="ml-2">✗ Sua resposta</span>}
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Resolução */}
-                    {erro.questao.explicacao && (
-                      <div className="mb-4">
-                        <button
-                          onClick={() => setMostrarResolucao(mostrarResolucao === erro.id ? null : erro.id)}
-                          className="flex items-center gap-2 text-blue-600 font-medium hover:underline"
-                        >
-                          {mostrarResolucao === erro.id ? (
-                            <><EyeOff className="w-4 h-4" /> Ocultar resolução</>
-                          ) : (
-                            <><Eye className="w-4 h-4" /> Ver resolução</>
+                            {isMostrandoResolucao ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                            {isMostrandoResolucao ? 'Ocultar resolução' : 'Ver resolução'}
+                          </button>
+                          
+                          {isMostrandoResolucao && (
+                            <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                              <p className="font-medium text-blue-800 mb-2">💡 Resolução:</p>
+                              <p className="text-blue-700 whitespace-pre-line">{questao.explicacao}</p>
+                            </div>
                           )}
-                        </button>
-                        
-                        {mostrarResolucao === erro.id && (
-                          <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                            <p className="text-blue-800 whitespace-pre-line">{erro.questao.explicacao}</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                        </div>
+                      )}
 
-                    {/* Ações */}
-                    <div className="flex items-center gap-3 pt-4 border-t border-gray-200">
-                      <button
-                        onClick={() => marcarRevisado(erro.id, !erro.revisado)}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all ${
-                          erro.revisado
-                            ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                            : 'bg-emerald-500 text-white hover:bg-emerald-600'
-                        }`}
-                      >
-                        <CheckCircle className="w-4 h-4" />
-                        {erro.revisado ? 'Marcar como pendente' : 'Marcar como revisado'}
-                      </button>
-                      
-                      <button
-                        onClick={() => removerDoCarderno(erro.id)}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-medium bg-white border border-red-200 text-red-600 hover:bg-red-50"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        Remover
-                      </button>
+                      {/* Ações */}
+                      <div className="flex items-center gap-3 pt-3 border-t border-gray-200">
+                        <button
+                          onClick={() => handleMarcarRevisado(erro.id, erro.revisado)}
+                          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                            erro.revisado
+                              ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                              : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                          }`}
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                          {erro.revisado ? 'Marcar como pendente' : 'Marcar como revisado'}
+                        </button>
+                        <button
+                          onClick={() => handleRemover(erro.id)}
+                          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-red-100 text-red-700 hover:bg-red-200"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Remover
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
-            ))}
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </main>
