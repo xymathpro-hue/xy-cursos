@@ -1,1 +1,201 @@
 
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { 
+  ArrowLeft,
+  Trophy,
+  Lock,
+  CheckCircle,
+  Star
+} from 'lucide-react';
+import { getConquistasUsuario } from '@/lib/conquistas-system';
+
+interface Conquista {
+  id: string;
+  codigo: string;
+  titulo: string;
+  descricao: string;
+  icone: string;
+  categoria: string;
+  xp_bonus: number;
+  criterio_tipo: string;
+  criterio_valor: number;
+  desbloqueada: boolean;
+  desbloqueada_em: string | null;
+}
+
+export default function ConquistasPage() {
+  const router = useRouter();
+  const supabase = createClientComponentClient();
+
+  const [loading, setLoading] = useState(true);
+  const [conquistas, setConquistas] = useState<Conquista[]>([]);
+  const [categoriaAtiva, setCategoriaAtiva] = useState<string>('todas');
+
+  useEffect(() => {
+    async function fetchData() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push('/login');
+        return;
+      }
+
+      const conquistasData = await getConquistasUsuario(supabase, user.id);
+      setConquistas(conquistasData);
+      setLoading(false);
+    }
+
+    fetchData();
+  }, [supabase, router]);
+
+  const categorias = [
+    { id: 'todas', nome: 'Todas' },
+    { id: 'iniciante', nome: 'Iniciante' },
+    { id: 'questoes', nome: 'Questões' },
+    { id: 'acertos', nome: 'Acertos' },
+    { id: 'batalhas', nome: 'Batalhas' },
+    { id: 'perfeitas', nome: 'Perfeitas' },
+    { id: 'streak', nome: 'Streak' },
+    { id: 'xp', nome: 'XP' },
+    { id: 'nivel', nome: 'Nível' },
+  ];
+
+  const conquistasFiltradas = categoriaAtiva === 'todas' 
+    ? conquistas 
+    : conquistas.filter(c => c.categoria === categoriaAtiva);
+
+  const totalDesbloqueadas = conquistas.filter(c => c.desbloqueada).length;
+  const percentualCompleto = conquistas.length > 0 
+    ? Math.round((totalDesbloqueadas / conquistas.length) * 100) 
+    : 0;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-amber-500/30 border-t-amber-500 rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-gradient-to-r from-amber-500 to-yellow-500 text-white">
+        <div className="max-w-4xl mx-auto px-4 py-4">
+          <div className="flex items-center gap-3">
+            <Link href="/dashboard" className="p-2 hover:bg-white/10 rounded-lg">
+              <ArrowLeft className="w-6 h-6" />
+            </Link>
+            <div>
+              <h1 className="text-xl font-bold">Conquistas</h1>
+              <p className="text-white/80 text-sm">{totalDesbloqueadas} de {conquistas.length} desbloqueadas</p>
+            </div>
+          </div>
+
+          {/* Progresso geral */}
+          <div className="mt-4">
+            <div className="flex items-center justify-between text-sm text-white/80 mb-1">
+              <span>Progresso total</span>
+              <span>{percentualCompleto}%</span>
+            </div>
+            <div className="h-3 bg-white/20 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-white rounded-full transition-all duration-500"
+                style={{ width: `${percentualCompleto}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Filtro de categorias */}
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
+        <div className="max-w-4xl mx-auto px-4">
+          <div className="flex gap-2 py-3 overflow-x-auto">
+            {categorias.map(cat => (
+              <button
+                key={cat.id}
+                onClick={() => setCategoriaAtiva(cat.id)}
+                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
+                  categoriaAtiva === cat.id
+                    ? 'bg-amber-500 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {cat.nome}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Lista de conquistas */}
+      <main className="max-w-4xl mx-auto px-4 py-6">
+        <div className="grid gap-3">
+          {conquistasFiltradas.map(conquista => (
+            <div
+              key={conquista.id}
+              className={`bg-white rounded-2xl p-4 border-2 transition-all ${
+                conquista.desbloqueada 
+                  ? 'border-amber-200 shadow-sm' 
+                  : 'border-gray-100 opacity-60'
+              }`}
+            >
+              <div className="flex items-center gap-4">
+                {/* Ícone */}
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl ${
+                  conquista.desbloqueada 
+                    ? 'bg-amber-100' 
+                    : 'bg-gray-100 grayscale'
+                }`}>
+                  {conquista.desbloqueada ? conquista.icone : <Lock className="w-6 h-6 text-gray-400" />}
+                </div>
+
+                {/* Info */}
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className={`font-bold ${conquista.desbloqueada ? 'text-gray-900' : 'text-gray-400'}`}>
+                      {conquista.titulo}
+                    </p>
+                    {conquista.desbloqueada && (
+                      <CheckCircle className="w-5 h-5 text-emerald-500" />
+                    )}
+                  </div>
+                  <p className={`text-sm ${conquista.desbloqueada ? 'text-gray-500' : 'text-gray-400'}`}>
+                    {conquista.descricao}
+                  </p>
+                  {conquista.xp_bonus > 0 && (
+                    <div className="flex items-center gap-1 mt-1">
+                      <Star className="w-4 h-4 text-amber-500" />
+                      <span className="text-amber-600 text-sm font-medium">+{conquista.xp_bonus} XP</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Data */}
+                {conquista.desbloqueada && conquista.desbloqueada_em && (
+                  <div className="text-right">
+                    <p className="text-xs text-gray-400">
+                      {new Date(conquista.desbloqueada_em).toLocaleDateString('pt-BR')}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {conquistasFiltradas.length === 0 && (
+          <div className="text-center py-12">
+            <Trophy className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-500">Nenhuma conquista nesta categoria</p>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
