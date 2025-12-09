@@ -16,7 +16,6 @@ import {
   Target,
   CheckCircle,
   Zap,
-  Award,
   Trophy
 } from 'lucide-react';
 
@@ -56,7 +55,6 @@ export default function RelatorioPage() {
         return;
       }
 
-      // Datas da semana atual (domingo a sábado)
       const hoje = new Date();
       const inicioSemana = new Date(hoje);
       inicioSemana.setDate(hoje.getDate() - hoje.getDay());
@@ -66,14 +64,12 @@ export default function RelatorioPage() {
       fimSemana.setDate(inicioSemana.getDate() + 6);
       fimSemana.setHours(23, 59, 59, 999);
 
-      // Datas da semana anterior
       const inicioSemanaAnterior = new Date(inicioSemana);
       inicioSemanaAnterior.setDate(inicioSemana.getDate() - 7);
 
       const fimSemanaAnterior = new Date(inicioSemana);
       fimSemanaAnterior.setDate(inicioSemana.getDate() - 1);
 
-      // Buscar progresso da semana atual
       const { data: progressoAtual } = await supabase
         .from('progresso_diario')
         .select('data, xp_ganho, questoes_respondidas, questoes_corretas')
@@ -82,7 +78,6 @@ export default function RelatorioPage() {
         .lte('data', fimSemana.toISOString().split('T')[0])
         .order('data');
 
-      // Buscar progresso da semana anterior
       const { data: progressoAnterior } = await supabase
         .from('progresso_diario')
         .select('data, xp_ganho, questoes_respondidas, questoes_corretas')
@@ -90,7 +85,6 @@ export default function RelatorioPage() {
         .gte('data', inicioSemanaAnterior.toISOString().split('T')[0])
         .lte('data', fimSemanaAnterior.toISOString().split('T')[0]);
 
-      // Buscar streak
       const { data: statsData } = await supabase
         .from('user_stats')
         .select('streak_atual')
@@ -101,7 +95,6 @@ export default function RelatorioPage() {
         setStreakAtual(statsData.streak_atual);
       }
 
-      // Preencher dias da semana (mesmo os sem dados)
       const diasSemana: ProgressoDia[] = [];
       for (let i = 0; i < 7; i++) {
         const dia = new Date(inicioSemana);
@@ -136,10 +129,12 @@ export default function RelatorioPage() {
     const totalAcertos = progresso.reduce((sum, p) => sum + p.questoes_corretas, 0);
     const diasEstudados = progresso.filter(p => p.xp_ganho > 0 || p.questoes_respondidas > 0).length;
     
-    const melhorDia = progresso.reduce((melhor, atual) => {
-      if (!melhor || atual.xp_ganho > melhor.xp_ganho) return atual;
-      return melhor;
-    }, null as ProgressoDia | null);
+    let melhorDia: ProgressoDia | null = null;
+    for (const dia of progresso) {
+      if (dia.xp_ganho > 0 && (!melhorDia || dia.xp_ganho > melhorDia.xp_ganho)) {
+        melhorDia = dia;
+      }
+    }
 
     return {
       totalXP,
@@ -147,7 +142,7 @@ export default function RelatorioPage() {
       totalAcertos,
       taxaAcerto: totalQuestoes > 0 ? Math.round((totalAcertos / totalQuestoes) * 100) : 0,
       diasEstudados,
-      melhorDia: melhorDia?.xp_ganho > 0 ? melhorDia : null,
+      melhorDia,
       mediaXPDiario: diasEstudados > 0 ? Math.round(totalXP / diasEstudados) : 0,
       mediaQuestoesDiario: diasEstudados > 0 ? Math.round(totalQuestoes / diasEstudados) : 0
     };
@@ -191,7 +186,6 @@ export default function RelatorioPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white">
         <div className="max-w-4xl mx-auto px-4 py-4">
           <div className="flex items-center gap-3">
@@ -210,9 +204,7 @@ export default function RelatorioPage() {
       </header>
 
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-        {/* Cards de Resumo */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {/* XP Total */}
           <div className="bg-white rounded-2xl p-4 border border-gray-100">
             <div className="flex items-center gap-2 mb-2">
               <Star className="w-5 h-5 text-amber-500" />
@@ -232,7 +224,6 @@ export default function RelatorioPage() {
             )}
           </div>
 
-          {/* Questões */}
           <div className="bg-white rounded-2xl p-4 border border-gray-100">
             <div className="flex items-center gap-2 mb-2">
               <CheckCircle className="w-5 h-5 text-emerald-500" />
@@ -252,7 +243,6 @@ export default function RelatorioPage() {
             )}
           </div>
 
-          {/* Taxa de Acerto */}
           <div className="bg-white rounded-2xl p-4 border border-gray-100">
             <div className="flex items-center gap-2 mb-2">
               <Target className="w-5 h-5 text-blue-500" />
@@ -272,7 +262,6 @@ export default function RelatorioPage() {
             )}
           </div>
 
-          {/* Dias Estudados */}
           <div className="bg-white rounded-2xl p-4 border border-gray-100">
             <div className="flex items-center gap-2 mb-2">
               <Calendar className="w-5 h-5 text-violet-500" />
@@ -283,7 +272,6 @@ export default function RelatorioPage() {
           </div>
         </div>
 
-        {/* Gráfico de XP por Dia */}
         <div className="bg-white rounded-2xl p-5 border border-gray-100">
           <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
             <BarChart3 className="w-5 h-5 text-blue-500" />
@@ -315,7 +303,6 @@ export default function RelatorioPage() {
           </div>
         </div>
 
-        {/* Streak e Melhor Dia */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-gradient-to-r from-orange-500 to-red-500 rounded-2xl p-5 text-white">
             <div className="flex items-center gap-2 mb-2">
@@ -340,7 +327,6 @@ export default function RelatorioPage() {
           )}
         </div>
 
-        {/* Médias */}
         <div className="bg-white rounded-2xl p-5 border border-gray-100">
           <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-emerald-500" />
@@ -362,7 +348,6 @@ export default function RelatorioPage() {
           </div>
         </div>
 
-        {/* Detalhes por Dia */}
         <div className="bg-white rounded-2xl p-5 border border-gray-100">
           <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
             <Calendar className="w-5 h-5 text-violet-500" />
@@ -418,7 +403,6 @@ export default function RelatorioPage() {
           </div>
         </div>
 
-        {/* Call to Action */}
         <div className="bg-gradient-to-r from-violet-500 to-purple-500 rounded-2xl p-6 text-white text-center">
           <Zap className="w-10 h-10 mx-auto mb-3" />
           <h3 className="text-xl font-bold mb-2">Continue Evoluindo!</h3>
