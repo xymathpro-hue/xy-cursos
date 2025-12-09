@@ -1,14 +1,12 @@
-
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { 
   Zap, 
   Clock, 
-  Trophy,
   Home,
   RotateCcw,
   CheckCircle,
@@ -50,6 +48,7 @@ export default function BatalhaRapidaPage() {
   const [finalizado, setFinalizado] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [tempoInicio, setTempoInicio] = useState<number>(0);
+  const [respondendo, setRespondendo] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
@@ -60,7 +59,6 @@ export default function BatalhaRapidaPage() {
       }
       setUserId(user.id);
 
-      // Buscar 5 questões aleatórias
       const { data: questoesData } = await supabase
         .from('questoes')
         .select('*')
@@ -68,7 +66,6 @@ export default function BatalhaRapidaPage() {
         .limit(50);
 
       if (questoesData && questoesData.length > 0) {
-        // Embaralhar e pegar 5
         const embaralhadas = questoesData.sort(() => Math.random() - 0.5).slice(0, 5);
         setQuestoes(embaralhadas);
       }
@@ -81,12 +78,11 @@ export default function BatalhaRapidaPage() {
 
   // Timer
   useEffect(() => {
-    if (!iniciado || finalizado || tempoRestante <= 0) return;
+    if (!iniciado || finalizado || respondendo) return;
 
     const timer = setInterval(() => {
       setTempoRestante(prev => {
         if (prev <= 1) {
-          // Tempo esgotado - registrar como errado
           handleTempoEsgotado();
           return 30;
         }
@@ -95,9 +91,12 @@ export default function BatalhaRapidaPage() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [iniciado, finalizado, questaoAtual]);
+  }, [iniciado, finalizado, questaoAtual, respondendo]);
 
-  const handleTempoEsgotado = useCallback(() => {
+  const handleTempoEsgotado = () => {
+    if (respondendo) return;
+    setRespondendo(true);
+    
     const questao = questoes[questaoAtual];
     if (!questao) return;
 
@@ -108,14 +107,17 @@ export default function BatalhaRapidaPage() {
       tempo: 30
     }]);
 
-    if (questaoAtual < questoes.length - 1) {
-      setQuestaoAtual(prev => prev + 1);
-      setTempoRestante(30);
-      setTempoInicio(Date.now());
-    } else {
-      setFinalizado(true);
-    }
-  }, [questaoAtual, questoes]);
+    setTimeout(() => {
+      if (questaoAtual < questoes.length - 1) {
+        setQuestaoAtual(prev => prev + 1);
+        setTempoRestante(30);
+        setTempoInicio(Date.now());
+      } else {
+        setFinalizado(true);
+      }
+      setRespondendo(false);
+    }, 100);
+  };
 
   const handleIniciar = () => {
     setIniciado(true);
@@ -123,11 +125,13 @@ export default function BatalhaRapidaPage() {
   };
 
   const handleResponder = async (letra: string) => {
+    if (respondendo) return;
+    setRespondendo(true);
+
     const questao = questoes[questaoAtual];
     const tempoGasto = Math.round((Date.now() - tempoInicio) / 1000);
     const correta = letra === questao.resposta_correta;
 
-    // Salvar resultado
     setResultados(prev => [...prev, {
       questaoId: questao.id,
       resposta: letra,
@@ -135,7 +139,6 @@ export default function BatalhaRapidaPage() {
       tempo: tempoGasto
     }]);
 
-    // Salvar no banco
     if (userId) {
       await supabase.from('respostas_usuario').upsert({
         user_id: userId,
@@ -155,32 +158,45 @@ export default function BatalhaRapidaPage() {
       }
     }
 
-    // Próxima questão ou finalizar
-    if (questaoAtual < questoes.length - 1) {
-      setQuestaoAtual(prev => prev + 1);
-      setTempoRestante(30);
-      setTempoInicio(Date.now());
-    } else {
-      setFinalizado(true);
-    }
+    // Delay pequeno antes de passar para próxima
+    setTimeout(() => {
+      if (questaoAtual < questoes.length - 1) {
+        setQuestaoAtual(prev => prev + 1);
+        setTempoRestante(30);
+        setTempoInicio(Date.now());
+      } else {
+        setFinalizado(true);
+      }
+      setRespondendo(false);
+    }, 300);
   };
 
-  const handleReiniciar = () => {
+  const handleReiniciar = async () => {
+    // Buscar novas questões
+    const { data: questoesData } = await supabase
+      .from('questoes')
+      .select('*')
+      .eq('ativo', true)
+      .limit(50);
+
+    if (questoesData && questoesData.length > 0) {
+      const embaralhadas = questoesData.sort(() => Math.random() - 0.5).slice(0, 5);
+      setQuestoes(embaralhadas);
+    }
+
     setQuestaoAtual(0);
     setTempoRestante(30);
     setResultados([]);
     setIniciado(false);
     setFinalizado(false);
-    
-    // Embaralhar novamente
-    setQuestoes(prev => [...prev].sort(() => Math.random() - 0.5));
+    setRespondendo(false);
   };
 
   const calcularEstatisticas = () => {
     const acertos = resultados.filter(r => r.correta).length;
     const tempoTotal = resultados.reduce((acc, r) => acc + r.tempo, 0);
-    const tempoMedio = Math.round(tempoTotal / resultados.length);
-    const xpGanho = acertos * 20 + (acertos === 5 ? 50 : 0); // Bonus por perfeito
+    const tempoMedio = resultados.length > 0 ? Math.round(tempoTotal / resultados.length) : 0;
+    const xpGanho = acertos * 20 + (acertos === 5 ? 50 : 0);
     
     return { acertos, tempoTotal, tempoMedio, xpGanho };
   };
@@ -248,7 +264,7 @@ export default function BatalhaRapidaPage() {
 
   // Tela de resultado
   if (finalizado) {
-    const { acertos, tempoTotal, tempoMedio, xpGanho } = calcularEstatisticas();
+    const { acertos, tempoMedio, xpGanho } = calcularEstatisticas();
     const percentual = (acertos / 5) * 100;
     const emoji = percentual === 100 ? '🏆' : percentual >= 80 ? '🔥' : percentual >= 60 ? '⚡' : percentual >= 40 ? '👍' : '💪';
 
@@ -282,7 +298,6 @@ export default function BatalhaRapidaPage() {
               {acertos === 5 && <p className="text-amber-600 text-sm">🎉 Bônus de perfeição!</p>}
             </div>
 
-            {/* Resumo das respostas */}
             <div className="flex justify-center gap-2 mb-6">
               {resultados.map((r, i) => (
                 <div 
@@ -326,7 +341,6 @@ export default function BatalhaRapidaPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-500 to-orange-600">
-      {/* Header com timer */}
       <header className="p-4">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -335,7 +349,6 @@ export default function BatalhaRapidaPage() {
           </div>
           
           <div className="flex items-center gap-4">
-            {/* Progresso */}
             <div className="flex gap-1">
               {[0, 1, 2, 3, 4].map(i => (
                 <div 
@@ -349,7 +362,6 @@ export default function BatalhaRapidaPage() {
               ))}
             </div>
 
-            {/* Timer */}
             <div className={`flex items-center gap-1 bg-white rounded-full px-4 py-2 ${tempoRestante <= 10 ? 'animate-pulse' : ''}`}>
               <Clock className={`w-5 h-5 ${getCorTempo()}`} />
               <span className={`text-xl font-bold ${getCorTempo()}`}>{tempoRestante}</span>
@@ -358,7 +370,6 @@ export default function BatalhaRapidaPage() {
         </div>
       </header>
 
-      {/* Questão */}
       <main className="px-4 pb-8">
         <div className="max-w-2xl mx-auto">
           <div className="bg-white rounded-3xl p-6 shadow-2xl">
@@ -382,9 +393,14 @@ export default function BatalhaRapidaPage() {
 
                 return (
                   <button
-                    key={letra}
+                    key={`${questao.id}-${letra}`}
                     onClick={() => handleResponder(letra)}
-                    className="w-full p-4 rounded-xl border-2 border-gray-200 hover:border-amber-400 hover:bg-amber-50 text-left transition-all active:scale-98"
+                    disabled={respondendo}
+                    className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
+                      respondendo 
+                        ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-50' 
+                        : 'border-gray-200 hover:border-amber-400 hover:bg-amber-50 active:bg-amber-100'
+                    }`}
                   >
                     <div className="flex items-start gap-3">
                       <span className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-sm font-bold text-gray-600 shrink-0">
@@ -398,7 +414,6 @@ export default function BatalhaRapidaPage() {
             </div>
           </div>
 
-          {/* Barra de tempo visual */}
           <div className="mt-4 h-2 bg-white/30 rounded-full overflow-hidden">
             <div 
               className={`h-full transition-all duration-1000 ${
@@ -413,4 +428,4 @@ export default function BatalhaRapidaPage() {
       </main>
     </div>
   );
-}
+      }
