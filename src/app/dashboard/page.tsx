@@ -43,13 +43,17 @@ interface DiagnosticoResult {
   created_at: string;
 }
 
-interface Conquista {
+interface ConquistaBase {
   id: string;
   titulo: string;
   descricao: string;
   icone: string;
   xp_bonus: number;
+}
+
+interface ConquistaComStatus extends ConquistaBase {
   desbloqueada: boolean;
+  desbloqueada_em: string | null;
 }
 
 export default function DashboardPage() {
@@ -61,10 +65,10 @@ export default function DashboardPage() {
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [diagnostico, setDiagnostico] = useState<DiagnosticoResult | null>(null);
   const [errosPendentes, setErrosPendentes] = useState(0);
-  const [conquistasRecentes, setConquistasRecentes] = useState<Conquista[]>([]);
+  const [conquistasRecentes, setConquistasRecentes] = useState<ConquistaComStatus[]>([]);
   const [totalConquistas, setTotalConquistas] = useState({ desbloqueadas: 0, total: 0 });
-  const [novasConquistas, setNovasConquistas] = useState<Conquista[]>([]);
-  const [conquistaAtual, setConquistaAtual] = useState<Conquista | null>(null);
+  const [novasConquistas, setNovasConquistas] = useState<ConquistaBase[]>([]);
+  const [conquistaAtual, setConquistaAtual] = useState<ConquistaBase | null>(null);
 
   useEffect(() => {
     async function fetchData() {
