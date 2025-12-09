@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -17,26 +18,27 @@ import {
   Filter
 } from 'lucide-react';
 
+interface Questao {
+  id: string;
+  numero: number;
+  enunciado: string;
+  alternativa_a: string;
+  alternativa_b: string;
+  alternativa_c: string;
+  alternativa_d: string;
+  alternativa_e: string;
+  resposta_correta: string;
+  explicacao: string;
+  dificuldade: string;
+}
+
 interface ErroItem {
   id: string;
   questao_id: string;
   resposta_usuario: string;
   revisado: boolean;
   created_at: string;
-  questao: {
-    id: string;
-    numero: number;
-    enunciado: string;
-    alternativa_a: string;
-    alternativa_b: string;
-    alternativa_c: string;
-    alternativa_d: string;
-    alternativa_e: string;
-    resposta_correta: string;
-    explicacao: string;
-    dificuldade: string;
-    aula_id: string;
-  };
+  questao?: Questao;
 }
 
 export default function CadernoErrosPage() {
@@ -60,42 +62,39 @@ export default function CadernoErrosPage() {
       return;
     }
 
-    const { data, error } = await supabase
+    // Buscar erros
+    const { data: errosData, error: errosError } = await supabase
       .from('caderno_erros')
-      .select(`
-        id,
-        questao_id,
-        resposta_usuario,
-        revisado,
-        created_at,
-        questao:questoes (
-          id,
-          numero,
-          enunciado,
-          alternativa_a,
-          alternativa_b,
-          alternativa_c,
-          alternativa_d,
-          alternativa_e,
-          resposta_correta,
-          explicacao,
-          dificuldade,
-          aula_id
-        )
-      `)
+      .select('id, questao_id, resposta_usuario, revisado, created_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
-    if (error) {
-      console.error('Erro ao buscar erros:', error);
+    if (errosError) {
+      console.error('Erro ao buscar erros:', errosError);
+      setLoading(false);
+      return;
     }
 
-    if (data) {
-      // Filtrar itens que têm questão válida
-      const errosValidos = data.filter(item => item.questao !== null) as ErroItem[];
-      setErros(errosValidos);
+    if (!errosData || errosData.length === 0) {
+      setErros([]);
+      setLoading(false);
+      return;
     }
 
+    // Buscar questões relacionadas
+    const questaoIds = errosData.map(e => e.questao_id);
+    const { data: questoesData } = await supabase
+      .from('questoes')
+      .select('*')
+      .in('id', questaoIds);
+
+    // Combinar dados
+    const errosCompletos = errosData.map(erro => ({
+      ...erro,
+      questao: questoesData?.find(q => q.id === erro.questao_id)
+    })).filter(e => e.questao); // Filtrar apenas os que têm questão
+
+    setErros(errosCompletos);
     setLoading(false);
   }
 
@@ -244,6 +243,8 @@ export default function CadernoErrosPage() {
               const isMostrandoResolucao = mostrarResolucao === erro.id;
               const questao = erro.questao;
 
+              if (!questao) return null;
+
               return (
                 <div 
                   key={erro.id} 
@@ -293,7 +294,7 @@ export default function CadernoErrosPage() {
                       {/* Alternativas */}
                       <div className="space-y-2 mb-4">
                         {['A', 'B', 'C', 'D', 'E'].map(letra => {
-                          const texto = questao[`alternativa_${letra.toLowerCase()}` as keyof typeof questao] as string;
+                          const texto = questao[`alternativa_${letra.toLowerCase()}` as keyof Questao] as string;
                           if (!texto) return null;
                           
                           const isCorreta = letra === questao.resposta_correta;
