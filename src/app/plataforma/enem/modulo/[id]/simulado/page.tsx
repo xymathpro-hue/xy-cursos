@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { ArrowLeft, Clock, Trophy, Target, TrendingUp, CheckCircle, XCircle } from 'lucide-react';
+import { ArrowLeft, Clock, Trophy, Target, TrendingUp, BookOpen, AlertCircle } from 'lucide-react';
 import { adicionarXP } from '@/lib/xp-system';
 import MathText from '@/components/MathText';
 
@@ -28,6 +28,7 @@ interface Resposta {
   correta: boolean;
   dificuldade: string;
   pontuacaoTri: number;
+  respostaCorreta: string;
 }
 
 export default function SimuladoPage() {
@@ -42,7 +43,6 @@ export default function SimuladoPage() {
   const [questoes, setQuestoes] = useState<Questao[]>([]);
   const [questaoAtual, setQuestaoAtual] = useState(0);
   const [respostas, setRespostas] = useState<Resposta[]>([]);
-  const [respondida, setRespondida] = useState(false);
   const [respostaSelecionada, setRespostaSelecionada] = useState<string | null>(null);
   const [tempoRestante, setTempoRestante] = useState(45 * 60);
   const [moduloNome, setModuloNome] = useState('');
@@ -97,6 +97,7 @@ export default function SimuladoPage() {
 
     await adicionarXP(supabase, userId, xp, `Simulado: ${moduloNome}`);
 
+    // Salvar resultado do simulado
     await supabase.from('simulado_resultados').insert({
       user_id: userId,
       modulo_id: moduloId,
@@ -105,6 +106,28 @@ export default function SimuladoPage() {
       total_acertos: respostas.filter(r => r.correta).length,
       tempo_usado: (45 * 60) - tempoRestante
     }).select();
+
+    // Salvar questões erradas no Caderno de Erros
+    const erradas = respostas.filter(r => !r.correta);
+    for (const errada of erradas) {
+      // Verificar se já existe
+      const { data: existente } = await supabase
+        .from('caderno_erros')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('questao_id', errada.questaoId)
+        .single();
+
+      if (!existente) {
+        await supabase.from('caderno_erros').insert({
+          user_id: userId,
+          questao_id: errada.questaoId,
+          resposta_usuario: errada.respostaUsuario.toUpperCase(),
+          resposta_correta: errada.respostaCorreta.toUpperCase(),
+          revisado: false
+        });
+      }
+    }
 
     setFase('resultado');
   }, [userId, respostas, questoes, tempoRestante, moduloId, moduloNome, calcularNotaTRI, supabase]);
@@ -156,7 +179,6 @@ export default function SimuladoPage() {
   };
 
   const carregarQuestoes = async () => {
-    // Buscar questões exclusivas do simulado
     const { data: questoesData } = await supabase
       .from('questoes')
       .select('*')
@@ -186,35 +208,38 @@ export default function SimuladoPage() {
     setQuestaoAtual(0);
     setRespostas([]);
     setTempoRestante(45 * 60);
+    setRespostaSelecionada(null);
   };
 
-  const responderQuestao = async (letra: string) => {
-    if (respondida) return;
-
-    const questao = questoes[questaoAtual];
-    const correta = letra.toUpperCase() === questao.resposta_correta.toUpperCase();
-
-    setRespondida(true);
+  const selecionarAlternativa = (letra: string) => {
     setRespostaSelecionada(letra);
-
-    const novaResposta: Resposta = {
-      questaoId: questao.id,
-      respostaUsuario: letra,
-      correta,
-      dificuldade: questao.dificuldade || 'medio',
-      pontuacaoTri: questao.pontuacao_tri || 500
-    };
-
-    setRespostas(prev => [...prev, novaResposta]);
   };
 
   const proximaQuestao = () => {
+    if (!respostaSelecionada) return;
+
+    const questao = questoes[questaoAtual];
+    const correta = respostaSelecionada.toUpperCase() === questao.resposta_correta.toUpperCase();
+
+    const novaResposta: Resposta = {
+      questaoId: questao.id,
+      respostaUsuario: respostaSelecionada,
+      correta,
+      dificuldade: questao.dificuldade || 'medio',
+      pontuacaoTri: questao.pontuacao_tri || 500,
+      respostaCorreta: questao.resposta_correta
+    };
+
+    setRespostas(prev => [...prev, novaResposta]);
+
     if (questaoAtual < questoes.length - 1) {
       setQuestaoAtual(prev => prev + 1);
-      setRespondida(false);
       setRespostaSelecionada(null);
     } else {
-      finalizarSimulado();
+      // Última questão - finalizar
+      const todasRespostas = [...respostas, novaResposta];
+      setRespostas(todasRespostas);
+      setTimeout(() => finalizarSimulado(), 100);
     }
   };
 
@@ -226,18 +251,43 @@ export default function SimuladoPage() {
     return { nivel: 'Iniciante', cor: 'text-gray-600', bg: 'bg-gray-100', emoji: '🌱' };
   };
 
-  const getAlternativaCor = (letra: string) => {
-    if (!respondida) {
-      return 'border-gray-200 hover:border-yellow-300 hover:bg-yellow-50';
+  const getDicaEstudo = () => {
+    const erros = respostas.filter(r => !r.correta).length;
+    const taxaAcerto = ((respostas.length - erros) / respostas.length) * 100;
+    
+    const errosFaceis = analise.facil.total - analise.facil.acertos;
+    const errosMedios = analise.medio.total - analise.medio.acertos;
+    const errosDificeis = analise.dificil.total - analise.dificil.acertos;
+
+    if (taxaAcerto >= 90) {
+      return {
+        titulo: '🎉 Excelente desempenho!',
+        mensagem: 'Você está muito bem preparado! Continue praticando para manter o nível.',
+        acao: 'Tente o próximo módulo ou refaça para melhorar ainda mais.'
+      };
+    } else if (taxaAcerto >= 70) {
+      return {
+        titulo: '⭐ Muito bom!',
+        mensagem: 'Você domina a maioria dos conceitos. Foque nos pontos que ainda precisam de atenção.',
+        acao: errosDificeis > errosFaceis 
+          ? 'Revise as questões difíceis no Caderno de Erros.' 
+          : 'Pratique mais questões de nível médio.'
+      };
+    } else if (taxaAcerto >= 50) {
+      return {
+        titulo: '📚 Bom progresso!',
+        mensagem: 'Você está no caminho certo, mas precisa reforçar alguns conceitos.',
+        acao: errosFaceis > 3 
+          ? 'Revise a teoria básica antes de continuar.' 
+          : 'Foque nas questões médias e difíceis no Caderno de Erros.'
+      };
+    } else {
+      return {
+        titulo: '🌱 Continue estudando!',
+        mensagem: 'Não desanime! Revise a teoria e refaça os exercícios básicos.',
+        acao: 'Recomendamos revisar a teoria de cada aula antes de refazer o simulado.'
+      };
     }
-    const questao = questoes[questaoAtual];
-    if (letra.toUpperCase() === questao.resposta_correta.toUpperCase()) {
-      return 'border-emerald-500 bg-emerald-50';
-    }
-    if (letra.toUpperCase() === respostaSelecionada?.toUpperCase()) {
-      return 'border-red-500 bg-red-50';
-    }
-    return 'border-gray-200 opacity-50';
   };
 
   if (loading) {
@@ -248,6 +298,7 @@ export default function SimuladoPage() {
     );
   }
 
+  // TELA INICIAL
   if (fase === 'inicio') {
     return (
       <div className="min-h-screen bg-gradient-to-b from-yellow-500 to-orange-500">
@@ -286,7 +337,7 @@ export default function SimuladoPage() {
           </div>
 
           <div className="bg-white/10 rounded-2xl p-4 mb-8 max-w-sm mx-auto">
-            <p className="text-white/70 text-sm">⚠️ Questões inéditas estilo ENEM! O tempo começa ao iniciar.</p>
+            <p className="text-white/70 text-sm">⚠️ Funciona como prova real: você só verá o resultado no final!</p>
           </div>
 
           <button
@@ -300,9 +351,12 @@ export default function SimuladoPage() {
     );
   }
 
+  // TELA DE RESULTADO
   if (fase === 'resultado') {
     const acertos = respostas.filter(r => r.correta).length;
+    const erros = respostas.length - acertos;
     const nivelInfo = getNivelNota(notaTRI);
+    const dica = getDicaEstudo();
 
     return (
       <div className="min-h-screen bg-gradient-to-b from-yellow-500 to-orange-500">
@@ -317,6 +371,7 @@ export default function SimuladoPage() {
             </div>
 
             <div className="bg-white rounded-3xl p-6 mb-6 text-gray-900">
+              {/* Nota TRI */}
               <div className="text-center mb-6">
                 <p className="text-sm text-gray-500 mb-1">Sua Nota TRI Estimada</p>
                 <p className="text-6xl font-black text-orange-500">{notaTRI}</p>
@@ -325,6 +380,7 @@ export default function SimuladoPage() {
                 </span>
               </div>
 
+              {/* Barra visual */}
               <div className="mb-6">
                 <div className="flex justify-between text-xs text-gray-400 mb-1">
                   <span>400</span>
@@ -338,18 +394,20 @@ export default function SimuladoPage() {
                 </div>
               </div>
 
+              {/* Acertos e Erros */}
               <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="bg-gray-50 rounded-xl p-4 text-center">
-                  <p className="text-3xl font-black text-gray-900">{acertos}/{questoes.length}</p>
-                  <p className="text-xs text-gray-500">Acertos</p>
+                <div className="bg-emerald-50 rounded-xl p-4 text-center">
+                  <p className="text-3xl font-black text-emerald-600">{acertos}</p>
+                  <p className="text-xs text-emerald-700">Acertos</p>
                 </div>
-                <div className="bg-gray-50 rounded-xl p-4 text-center">
-                  <p className="text-3xl font-black text-gray-900">{formatarTempo((45 * 60) - tempoRestante)}</p>
-                  <p className="text-xs text-gray-500">Tempo usado</p>
+                <div className="bg-red-50 rounded-xl p-4 text-center">
+                  <p className="text-3xl font-black text-red-600">{erros}</p>
+                  <p className="text-xs text-red-700">Erros</p>
                 </div>
               </div>
 
-              <div className="space-y-3">
+              {/* Desempenho por Nível */}
+              <div className="space-y-3 mb-6">
                 <p className="font-bold text-gray-700">📊 Desempenho por Nível</p>
                 
                 <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-xl">
@@ -357,12 +415,7 @@ export default function SimuladoPage() {
                     <span className="text-lg">🟢</span>
                     <span className="font-medium text-gray-700">Fáceis</span>
                   </div>
-                  <div className="text-right">
-                    <span className="font-bold text-emerald-600">{analise.facil.acertos}/{analise.facil.total}</span>
-                    <span className="text-gray-400 text-sm ml-2">
-                      ({analise.facil.total > 0 ? Math.round((analise.facil.acertos / analise.facil.total) * 100) : 0}%)
-                    </span>
-                  </div>
+                  <span className="font-bold text-emerald-600">{analise.facil.acertos}/{analise.facil.total}</span>
                 </div>
 
                 <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-xl">
@@ -370,12 +423,7 @@ export default function SimuladoPage() {
                     <span className="text-lg">🟡</span>
                     <span className="font-medium text-gray-700">Médias</span>
                   </div>
-                  <div className="text-right">
-                    <span className="font-bold text-yellow-600">{analise.medio.acertos}/{analise.medio.total}</span>
-                    <span className="text-gray-400 text-sm ml-2">
-                      ({analise.medio.total > 0 ? Math.round((analise.medio.acertos / analise.medio.total) * 100) : 0}%)
-                    </span>
-                  </div>
+                  <span className="font-bold text-yellow-600">{analise.medio.acertos}/{analise.medio.total}</span>
                 </div>
 
                 <div className="flex items-center justify-between p-3 bg-red-50 rounded-xl">
@@ -383,46 +431,61 @@ export default function SimuladoPage() {
                     <span className="text-lg">🔴</span>
                     <span className="font-medium text-gray-700">Difíceis</span>
                   </div>
-                  <div className="text-right">
-                    <span className="font-bold text-red-600">{analise.dificil.acertos}/{analise.dificil.total}</span>
-                    <span className="text-gray-400 text-sm ml-2">
-                      ({analise.dificil.total > 0 ? Math.round((analise.dificil.acertos / analise.dificil.total) * 100) : 0}%)
-                    </span>
-                  </div>
+                  <span className="font-bold text-red-600">{analise.dificil.acertos}/{analise.dificil.total}</span>
                 </div>
               </div>
 
-              <div className="mt-6 p-4 bg-blue-50 rounded-xl">
-                <p className="text-sm text-blue-700">
-                  {notaTRI >= 700 
-                    ? '🎉 Excelente! Você está pronto para gabaritar no ENEM!'
-                    : notaTRI >= 600
-                      ? '⭐ Muito bom! Continue praticando para subir ainda mais!'
-                      : notaTRI >= 500
-                        ? '📚 Bom progresso! Foque nas questões médias e difíceis.'
-                        : '🌱 Continue estudando! Revise a teoria e refaça os exercícios.'
-                  }
-                </p>
+              {/* Dica de Estudo */}
+              <div className="bg-blue-50 rounded-xl p-4 mb-4">
+                <h3 className="font-bold text-blue-800 mb-2">{dica.titulo}</h3>
+                <p className="text-sm text-blue-700 mb-2">{dica.mensagem}</p>
+                <p className="text-sm text-blue-600 font-medium">💡 {dica.acao}</p>
               </div>
+
+              {/* Alerta Caderno de Erros */}
+              {erros > 0 && (
+                <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold text-orange-800">
+                      {erros} {erros === 1 ? 'questão foi adicionada' : 'questões foram adicionadas'} ao Caderno de Erros
+                    </p>
+                    <p className="text-sm text-orange-600">Revise as questões para entender seus erros e ver as soluções.</p>
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="flex gap-4">
-              <button
-                onClick={() => {
-                  setFase('inicio');
-                  setRespostas([]);
-                  setQuestaoAtual(0);
-                }}
-                className="flex-1 bg-white/20 text-white font-bold py-4 rounded-xl hover:bg-white/30 transition-all"
-              >
-                Refazer
-              </button>
-              <Link
-                href={`/plataforma/enem/modulo/${moduloId}`}
-                className="flex-1 bg-white text-orange-600 font-bold py-4 rounded-xl hover:bg-orange-50 transition-all text-center"
-              >
-                Voltar
-              </Link>
+            {/* Botões */}
+            <div className="space-y-3">
+              {erros > 0 && (
+                <Link
+                  href="/plataforma/enem/caderno-erros"
+                  className="w-full bg-white text-orange-600 font-bold py-4 rounded-xl hover:bg-orange-50 transition-all flex items-center justify-center gap-2"
+                >
+                  <BookOpen className="w-5 h-5" />
+                  Revisar no Caderno de Erros
+                </Link>
+              )}
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setFase('inicio');
+                    setRespostas([]);
+                    setQuestaoAtual(0);
+                  }}
+                  className="flex-1 bg-white/20 text-white font-bold py-4 rounded-xl hover:bg-white/30 transition-all"
+                >
+                  Refazer
+                </button>
+                <Link
+                  href={`/plataforma/enem/modulo/${moduloId}`}
+                  className="flex-1 bg-white/20 text-white font-bold py-4 rounded-xl hover:bg-white/30 transition-all text-center"
+                >
+                  Voltar
+                </Link>
+              </div>
             </div>
           </div>
         </main>
@@ -430,6 +493,7 @@ export default function SimuladoPage() {
     );
   }
 
+  // TELA DE QUESTÕES (sem feedback imediato)
   const questao = questoes[questaoAtual];
   if (!questao) {
     return (
@@ -459,6 +523,7 @@ export default function SimuladoPage() {
         </div>
       </header>
 
+      {/* Barra de progresso */}
       <div className="h-2 bg-gray-200">
         <div 
           className="h-full bg-yellow-500 transition-all"
@@ -467,40 +532,34 @@ export default function SimuladoPage() {
       </div>
 
       <main className="max-w-2xl mx-auto px-4 py-6">
-        <div className="flex items-center gap-2 mb-4">
-          <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-            questao.dificuldade === 'facil' ? 'bg-emerald-100 text-emerald-700' :
-            questao.dificuldade === 'medio' ? 'bg-yellow-100 text-yellow-700' :
-            'bg-red-100 text-red-700'
-          }`}>
-            {questao.dificuldade === 'facil' ? '🟢 Fácil' :
-             questao.dificuldade === 'medio' ? '🟡 Média' : '🔴 Difícil'}
-          </span>
-        </div>
-
+        {/* Enunciado */}
         <div className="bg-white rounded-2xl p-6 mb-6 border border-gray-100">
           <MathText text={questao.enunciado} className="text-gray-900" />
         </div>
 
+        {/* Alternativas */}
         <div className="space-y-3">
           {['a', 'b', 'c', 'd', 'e'].map((letra) => {
             const texto = questao[`alternativa_${letra}` as keyof Questao] as string;
             if (!texto) return null;
 
+            const selecionada = respostaSelecionada?.toUpperCase() === letra.toUpperCase();
+
             return (
               <button
                 key={letra}
-                onClick={() => responderQuestao(letra)}
-                disabled={respondida}
-                className={`w-full text-left p-4 rounded-xl border-2 transition-all ${getAlternativaCor(letra)}`}
+                onClick={() => selecionarAlternativa(letra)}
+                className={`w-full text-left p-4 rounded-xl border-2 transition-all ${
+                  selecionada 
+                    ? 'border-yellow-500 bg-yellow-50' 
+                    : 'border-gray-200 hover:border-yellow-300 hover:bg-yellow-50'
+                }`}
               >
                 <div className="flex items-start gap-3">
                   <span className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm shrink-0 ${
-                    respondida && letra.toUpperCase() === questao.resposta_correta.toUpperCase()
-                      ? 'bg-emerald-500 text-white'
-                      : respondida && letra.toUpperCase() === respostaSelecionada?.toUpperCase()
-                        ? 'bg-red-500 text-white'
-                        : 'bg-gray-100 text-gray-600'
+                    selecionada 
+                      ? 'bg-yellow-500 text-white' 
+                      : 'bg-gray-100 text-gray-600'
                   }`}>
                     {letra.toUpperCase()}
                   </span>
@@ -511,39 +570,18 @@ export default function SimuladoPage() {
           })}
         </div>
 
-        {respondida && (
-          <div className={`mt-6 p-4 rounded-xl ${
-            respostaSelecionada?.toUpperCase() === questao.resposta_correta.toUpperCase()
-              ? 'bg-emerald-100 border border-emerald-300'
-              : 'bg-red-100 border border-red-300'
-          }`}>
-            <div className="flex items-center gap-2 mb-2">
-              {respostaSelecionada?.toUpperCase() === questao.resposta_correta.toUpperCase() ? (
-                <>
-                  <CheckCircle className="w-5 h-5 text-emerald-600" />
-                  <span className="font-bold text-emerald-700">Correto!</span>
-                </>
-              ) : (
-                <>
-                  <XCircle className="w-5 h-5 text-red-600" />
-                  <span className="font-bold text-red-700">Incorreto</span>
-                </>
-              )}
-            </div>
-            {questao.explicacao && (
-              <MathText text={questao.explicacao} className="text-gray-600 text-sm" />
-            )}
-          </div>
-        )}
-
-        {respondida && (
-          <button
-            onClick={proximaQuestao}
-            className="w-full mt-6 bg-yellow-500 text-white font-bold py-4 rounded-xl hover:bg-yellow-600 transition-all flex items-center justify-center gap-2"
-          >
-            {questaoAtual < questoes.length - 1 ? 'Próxima Questão' : 'Ver Resultado'}
-          </button>
-        )}
+        {/* Botão Próxima/Finalizar */}
+        <button
+          onClick={proximaQuestao}
+          disabled={!respostaSelecionada}
+          className={`w-full mt-6 font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 ${
+            respostaSelecionada
+              ? 'bg-yellow-500 text-white hover:bg-yellow-600'
+              : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+          }`}
+        >
+          {questaoAtual < questoes.length - 1 ? 'Próxima Questão' : 'Finalizar Simulado'}
+        </button>
       </main>
     </div>
   );
