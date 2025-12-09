@@ -13,10 +13,10 @@ import {
   Trophy,
   TrendingUp,
   CheckCircle,
-  LogOut,
   ChevronRight,
   Award,
-  BarChart3
+  BarChart3,
+  User
 } from 'lucide-react';
 import { getOrCreateUserStats, calcularNivel, NIVEIS } from '@/lib/xp-system';
 import { verificarConquistas, getConquistasUsuario } from '@/lib/conquistas-system';
@@ -141,11 +141,6 @@ export default function DashboardPage() {
     setConquistaAtual(restantes[0] || null);
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push('/login');
-  };
-
   const nivelInfo = userStats ? calcularNivel(userStats.xp_total) : null;
   const taxaAcerto = userStats && userStats.questoes_respondidas > 0 
     ? Math.round((userStats.questoes_corretas / userStats.questoes_respondidas) * 100) 
@@ -183,12 +178,12 @@ export default function DashboardPage() {
               <h1 className="text-xl font-bold text-gray-900">Olá, {userName}! 👋</h1>
               <p className="text-sm text-gray-500">Continue sua jornada de estudos</p>
             </div>
-           <Link
-  href="/perfil"
-  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
->
-  <User className="w-5 h-5" />
-</Link>
+            <Link
+              href="/perfil"
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+            >
+              <User className="w-5 h-5" />
+            </Link>
           </div>
         </div>
       </header>
