@@ -12,7 +12,11 @@ import {
   CheckCircle,
   XCircle,
   Flame,
-  Star
+  Star,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 interface Questao {
@@ -25,6 +29,7 @@ interface Questao {
   alternativa_d: string;
   alternativa_e: string;
   resposta_correta: string;
+  explicacao: string;
   dificuldade: string;
 }
 
@@ -49,6 +54,9 @@ export default function BatalhaRapidaPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [tempoInicio, setTempoInicio] = useState<number>(0);
   const [respondendo, setRespondendo] = useState(false);
+  const [mostrarRevisao, setMostrarRevisao] = useState(false);
+  const [questaoExpandida, setQuestaoExpandida] = useState<string | null>(null);
+  const [mostrarResolucao, setMostrarResolucao] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -76,7 +84,6 @@ export default function BatalhaRapidaPage() {
     fetchData();
   }, [supabase, router]);
 
-  // Timer
   useEffect(() => {
     if (!iniciado || finalizado || respondendo) return;
 
@@ -158,7 +165,6 @@ export default function BatalhaRapidaPage() {
       }
     }
 
-    // Delay pequeno antes de passar para próxima
     setTimeout(() => {
       if (questaoAtual < questoes.length - 1) {
         setQuestaoAtual(prev => prev + 1);
@@ -172,7 +178,6 @@ export default function BatalhaRapidaPage() {
   };
 
   const handleReiniciar = async () => {
-    // Buscar novas questões
     const { data: questoesData } = await supabase
       .from('questoes')
       .select('*')
@@ -190,6 +195,9 @@ export default function BatalhaRapidaPage() {
     setIniciado(false);
     setFinalizado(false);
     setRespondendo(false);
+    setMostrarRevisao(false);
+    setQuestaoExpandida(null);
+    setMostrarResolucao(null);
   };
 
   const calcularEstatisticas = () => {
@@ -267,11 +275,12 @@ export default function BatalhaRapidaPage() {
     const { acertos, tempoMedio, xpGanho } = calcularEstatisticas();
     const percentual = (acertos / 5) * 100;
     const emoji = percentual === 100 ? '🏆' : percentual >= 80 ? '🔥' : percentual >= 60 ? '⚡' : percentual >= 40 ? '👍' : '💪';
+    const erros = resultados.filter(r => !r.correta);
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center p-4">
-        <div className="max-w-md w-full">
-          <div className="bg-white rounded-3xl p-8 text-center shadow-2xl">
+      <div className="min-h-screen bg-gradient-to-br from-amber-500 to-orange-600 p-4">
+        <div className="max-w-2xl mx-auto">
+          <div className="bg-white rounded-3xl p-8 text-center shadow-2xl mb-4">
             <div className="text-7xl mb-4">{emoji}</div>
             
             <h2 className="text-2xl font-black text-gray-900 mb-2">
@@ -314,6 +323,17 @@ export default function BatalhaRapidaPage() {
               ))}
             </div>
 
+            {/* Botão de revisão */}
+            {erros.length > 0 && (
+              <button
+                onClick={() => setMostrarRevisao(!mostrarRevisao)}
+                className="w-full py-3 rounded-xl border-2 border-red-200 text-red-600 font-medium hover:bg-red-50 flex items-center justify-center gap-2 mb-4"
+              >
+                {mostrarRevisao ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                {mostrarRevisao ? 'Ocultar Revisão' : `📚 Revisar ${erros.length} Erro${erros.length > 1 ? 's' : ''}`}
+              </button>
+            )}
+
             <div className="space-y-3">
               <button
                 onClick={handleReiniciar}
@@ -331,6 +351,119 @@ export default function BatalhaRapidaPage() {
               </Link>
             </div>
           </div>
+
+          {/* Seção de Revisão */}
+          {mostrarRevisao && erros.length > 0 && (
+            <div className="space-y-4">
+              <h3 className="text-white font-bold text-lg text-center">📖 Revisão das Questões</h3>
+              
+              {resultados.map((resultado, index) => {
+                const questao = questoes.find(q => q.id === resultado.questaoId);
+                if (!questao) return null;
+                
+                const isExpandida = questaoExpandida === resultado.questaoId;
+                const isMostrandoResolucao = mostrarResolucao === resultado.questaoId;
+
+                return (
+                  <div 
+                    key={resultado.questaoId}
+                    className={`bg-white rounded-xl border-2 overflow-hidden ${
+                      resultado.correta ? 'border-emerald-200' : 'border-red-200'
+                    }`}
+                  >
+                    <button
+                      onClick={() => setQuestaoExpandida(isExpandida ? null : resultado.questaoId)}
+                      className="w-full p-4 flex items-center justify-between hover:bg-gray-50"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                          resultado.correta ? 'bg-emerald-100' : 'bg-red-100'
+                        }`}>
+                          {resultado.correta 
+                            ? <CheckCircle className="w-5 h-5 text-emerald-600" />
+                            : <XCircle className="w-5 h-5 text-red-600" />
+                          }
+                        </div>
+                        <div className="text-left">
+                          <p className="font-medium text-gray-900">Questão {index + 1}</p>
+                          <p className="text-sm text-gray-500">
+                            Sua: <span className={resultado.correta ? 'text-emerald-600' : 'text-red-600'}>{resultado.resposta}</span> | 
+                            Correta: <span className="text-emerald-600">{questao.resposta_correta}</span> |
+                            Tempo: {resultado.tempo}s
+                          </p>
+                        </div>
+                      </div>
+                      {isExpandida 
+                        ? <ChevronUp className="w-5 h-5 text-gray-400" />
+                        : <ChevronDown className="w-5 h-5 text-gray-400" />
+                      }
+                    </button>
+
+                    {isExpandida && (
+                      <div className="p-4 border-t border-gray-100 bg-gray-50">
+                        <p className="text-gray-700 mb-4 whitespace-pre-line">{questao.enunciado}</p>
+
+                        <div className="space-y-2 mb-4">
+                          {['A', 'B', 'C', 'D', 'E'].map(letra => {
+                            const texto = questao[`alternativa_${letra.toLowerCase()}` as keyof Questao] as string;
+                            if (!texto) return null;
+                            
+                            const isCorreta = letra === questao.resposta_correta;
+                            const isErrada = letra === resultado.resposta && !isCorreta;
+                            
+                            return (
+                              <div 
+                                key={letra}
+                                className={`p-3 rounded-xl border ${
+                                  isCorreta 
+                                    ? 'bg-emerald-50 border-emerald-300' 
+                                    : isErrada 
+                                      ? 'bg-red-50 border-red-300' 
+                                      : 'bg-white border-gray-200'
+                                }`}
+                              >
+                                <span className={`font-bold mr-2 ${
+                                  isCorreta ? 'text-emerald-700' : isErrada ? 'text-red-700' : 'text-gray-700'
+                                }`}>
+                                  {letra})
+                                </span>
+                                <span className={
+                                  isCorreta ? 'text-emerald-700' : isErrada ? 'text-red-700' : 'text-gray-700'
+                                }>
+                                  {texto}
+                                </span>
+                                {isCorreta && <span className="ml-2 text-emerald-600 font-medium">✓ Correta</span>}
+                                {isErrada && <span className="ml-2 text-red-600 font-medium">✗ Sua resposta</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {questao.explicacao && (
+                          <div>
+                            <button
+                              onClick={() => setMostrarResolucao(isMostrandoResolucao ? null : resultado.questaoId)}
+                              className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium"
+                            >
+                              {isMostrandoResolucao ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                              {isMostrandoResolucao ? 'Ocultar resolução' : '💡 Ver resolução'}
+                            </button>
+                            
+                            {isMostrandoResolucao && (
+                              <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                                <p className="font-medium text-blue-800 mb-2">💡 Resolução:</p>
+                                <p className="text-blue-700 whitespace-pre-line">{questao.explicacao}</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -428,4 +561,4 @@ export default function BatalhaRapidaPage() {
       </main>
     </div>
   );
-      }
+}
