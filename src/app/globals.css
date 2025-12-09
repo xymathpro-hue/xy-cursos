@@ -193,3 +193,16 @@ a {
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
+/* KaTeX Styles */
+.math-text {
+  line-height: 1.6;
+}
+
+.math-text .katex {
+  font-size: 1.1em;
+}
+
+.math-text .katex-block {
+  overflow-x: auto;
+  padding: 0.5rem 0;
+}
