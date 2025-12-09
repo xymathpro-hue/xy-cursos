@@ -13,14 +13,15 @@ import {
   Trophy,
   TrendingUp,
   CheckCircle,
-  XCircle,
   LogOut,
   ChevronRight,
   Award,
-  Calendar,
   BarChart3
 } from 'lucide-react';
 import { getOrCreateUserStats, calcularNivel, NIVEIS } from '@/lib/xp-system';
+import { verificarConquistas, getConquistasUsuario } from '@/lib/conquistas-system';
+import DicaDoDia from '@/components/DicaDoDia';
+import ConquistaNotification from '@/components/ConquistaNotification';
 
 interface UserStats {
   xp_total: number;
@@ -42,6 +43,15 @@ interface DiagnosticoResult {
   created_at: string;
 }
 
+interface Conquista {
+  id: string;
+  titulo: string;
+  descricao: string;
+  icone: string;
+  xp_bonus: number;
+  desbloqueada: boolean;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const supabase = createClientComponentClient();
@@ -51,6 +61,10 @@ export default function DashboardPage() {
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [diagnostico, setDiagnostico] = useState<DiagnosticoResult | null>(null);
   const [errosPendentes, setErrosPendentes] = useState(0);
+  const [conquistasRecentes, setConquistasRecentes] = useState<Conquista[]>([]);
+  const [totalConquistas, setTotalConquistas] = useState({ desbloqueadas: 0, total: 0 });
+  const [novasConquistas, setNovasConquistas] = useState<Conquista[]>([]);
+  const [conquistaAtual, setConquistaAtual] = useState<Conquista | null>(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -68,6 +82,14 @@ export default function DashboardPage() {
       const stats = await getOrCreateUserStats(supabase, user.id);
       if (stats) {
         setUserStats(stats);
+
+        // Verificar conquistas
+        const diagnosticoCompleto = await verificarDiagnostico(user.id);
+        const novas = await verificarConquistas(supabase, user.id, stats, diagnosticoCompleto);
+        if (novas.length > 0) {
+          setNovasConquistas(novas);
+          setConquistaAtual(novas[0]);
+        }
       }
 
       // Diagnóstico
@@ -90,11 +112,37 @@ export default function DashboardPage() {
       
       setErrosPendentes(count || 0);
 
+      // Conquistas
+      const todasConquistas = await getConquistasUsuario(supabase, user.id);
+      const desbloqueadas = todasConquistas.filter(c => c.desbloqueada);
+      setTotalConquistas({ desbloqueadas: desbloqueadas.length, total: todasConquistas.length });
+      
+      // Últimas 3 conquistas desbloqueadas
+      const recentes = desbloqueadas
+        .sort((a, b) => new Date(b.desbloqueada_em || 0).getTime() - new Date(a.desbloqueada_em || 0).getTime())
+        .slice(0, 3);
+      setConquistasRecentes(recentes);
+
       setLoading(false);
+    }
+
+    async function verificarDiagnostico(userId: string) {
+      const { data } = await supabase
+        .from('diagnostico_resultados')
+        .select('id')
+        .eq('user_id', userId)
+        .single();
+      return !!data;
     }
 
     fetchData();
   }, [supabase, router]);
+
+  const handleCloseConquista = () => {
+    const restantes = novasConquistas.slice(1);
+    setNovasConquistas(restantes);
+    setConquistaAtual(restantes[0] || null);
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -124,6 +172,14 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Notificação de Conquista */}
+      {conquistaAtual && (
+        <ConquistaNotification 
+          conquista={conquistaAtual} 
+          onClose={handleCloseConquista} 
+        />
+      )}
+
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-4 py-4">
@@ -189,6 +245,46 @@ export default function DashboardPage() {
             )}
           </div>
         )}
+
+        {/* Dica do Dia */}
+        <DicaDoDia />
+
+        {/* Conquistas Recentes */}
+        <Link href="/conquistas" className="block bg-white rounded-2xl p-5 border border-gray-100 hover:border-amber-200 transition-all">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-amber-500" />
+              <h3 className="font-bold text-gray-900">Conquistas</h3>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">
+                {totalConquistas.desbloqueadas}/{totalConquistas.total}
+              </span>
+              <ChevronRight className="w-5 h-5 text-gray-400" />
+            </div>
+          </div>
+
+          {conquistasRecentes.length > 0 ? (
+            <div className="flex gap-3">
+              {conquistasRecentes.map(c => (
+                <div 
+                  key={c.id}
+                  className="w-14 h-14 bg-amber-100 rounded-2xl flex items-center justify-center text-2xl"
+                  title={c.titulo}
+                >
+                  {c.icone}
+                </div>
+              ))}
+              {totalConquistas.desbloqueadas > 3 && (
+                <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center text-sm text-gray-500 font-bold">
+                  +{totalConquistas.desbloqueadas - 3}
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-gray-400 text-sm">Nenhuma conquista ainda. Continue estudando!</p>
+          )}
+        </Link>
 
         {/* Estatísticas Rápidas */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
