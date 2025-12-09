@@ -1,281 +1,352 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { PLATAFORMAS } from '@/lib/constants/plataformas';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { 
+  Zap, 
+  Target, 
+  BookOpen, 
+  Flame,
+  Star,
+  Trophy,
+  TrendingUp,
+  CheckCircle,
+  LogOut,
+  ChevronRight,
+  Award,
+  BarChart3
+} from 'lucide-react';
+import { getOrCreateUserStats, calcularNivel, NIVEIS } from '@/lib/xp-system';
+import DicaDoDia from '@/components/DicaDoDia';
 
-export default function HomePage() {
+interface UserStats {
+  xp_total: number;
+  nivel: number;
+  titulo: string;
+  streak_atual: number;
+  streak_max: number;
+  ultimo_estudo: string;
+  questoes_respondidas: number;
+  questoes_corretas: number;
+  batalhas_jogadas: number;
+  batalhas_perfeitas: number;
+}
+
+interface DiagnosticoResult {
+  nivel: string;
+  nota_tri: number;
+  percentual_geral: number;
+  created_at: string;
+}
+
+export default function DashboardPage() {
+  const router = useRouter();
+  const supabase = createClientComponentClient();
+
+  const [loading, setLoading] = useState(true);
+  const [userName, setUserName] = useState('');
+  const [userStats, setUserStats] = useState<UserStats | null>(null);
+  const [diagnostico, setDiagnostico] = useState<DiagnosticoResult | null>(null);
+  const [errosPendentes, setErrosPendentes] = useState(0);
+
+  useEffect(() => {
+    async function fetchData() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push('/login');
+        return;
+      }
+
+      // Nome do usuário
+      const nome = user.user_metadata?.nome || user.email?.split('@')[0] || 'Estudante';
+      setUserName(nome);
+
+      // Stats do usuário
+      const stats = await getOrCreateUserStats(supabase, user.id);
+      if (stats) {
+        setUserStats(stats);
+      }
+
+      // Diagnóstico
+      const { data: diagData } = await supabase
+        .from('diagnostico_resultados')
+        .select('nivel, nota_tri, percentual_geral, created_at')
+        .eq('user_id', user.id)
+        .single();
+      
+      if (diagData) {
+        setDiagnostico(diagData);
+      }
+
+      // Erros pendentes
+      const { count } = await supabase
+        .from('caderno_erros')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('revisado', false);
+      
+      setErrosPendentes(count || 0);
+
+      setLoading(false);
+    }
+
+    fetchData();
+  }, [supabase, router]);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
+
+  const nivelInfo = userStats ? calcularNivel(userStats.xp_total) : null;
+  const taxaAcerto = userStats && userStats.questoes_respondidas > 0 
+    ? Math.round((userStats.questoes_corretas / userStats.questoes_respondidas) * 100) 
+    : 0;
+
+  const getNivelCor = (nivel: number) => {
+    if (nivel >= 9) return 'from-yellow-400 to-amber-500';
+    if (nivel >= 7) return 'from-orange-400 to-red-500';
+    if (nivel >= 5) return 'from-purple-400 to-pink-500';
+    if (nivel >= 3) return 'from-blue-400 to-indigo-500';
+    return 'from-emerald-400 to-teal-500';
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
   return (
-    <main className="min-h-screen">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 glass">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            {/* Logo */}
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-accent-purple to-accent-blue rounded-xl flex items-center justify-center">
-                <span className="text-white font-bold text-lg">XY</span>
-              </div>
-              <span className="font-display font-bold text-xl text-white">
-                XY Cursos
-              </span>
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+        <div className="max-w-4xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">Olá, {userName}! 👋</h1>
+              <p className="text-sm text-gray-500">Continue sua jornada de estudos</p>
             </div>
-
-            {/* Nav Desktop */}
-            <nav className="hidden md:flex items-center gap-8">
-              <a href="#cursos" className="text-dark-300 hover:text-white transition-colors text-sm">
-                Cursos
-              </a>
-              <a href="#sobre" className="text-dark-300 hover:text-white transition-colors text-sm">
-                Sobre
-              </a>
-              <a href="#contato" className="text-dark-300 hover:text-white transition-colors text-sm">
-                Contato
-              </a>
-            </nav>
-
-            {/* Actions */}
-            <div className="flex items-center gap-3">
-              <Link
-                href="/login"
-                className="text-dark-300 hover:text-white transition-colors text-sm"
-              >
-                Já tenho conta
-              </Link>
-            </div>
+            <button
+              onClick={handleLogout}
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
           </div>
         </div>
       </header>
 
-      {/* Hero Section */}
-      <section className="relative pt-32 pb-16 overflow-hidden">
-        {/* Glow effects */}
-        <div className="absolute top-20 left-1/4 w-96 h-96 bg-accent-purple/20 rounded-full blur-[120px]" />
-        <div className="absolute top-40 right-1/4 w-80 h-80 bg-accent-blue/15 rounded-full blur-[100px]" />
-
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center max-w-4xl mx-auto">
-            {/* Badge */}
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-dark-800/80 border border-dark-700/50 rounded-full mb-8 backdrop-blur-sm">
-              <span className="text-lg">🎓</span>
-              <span className="text-dark-300 text-sm font-medium">
-                100% Gratuito em 2025 - Fase de Testes
-              </span>
-            </div>
-
-            {/* Title */}
-            <h1 className="font-display text-4xl sm:text-5xl md:text-6xl font-bold text-white mb-6 leading-tight">
-              Escolha seu curso e{' '}
-              <span className="text-gradient">comece agora</span>
-            </h1>
-
-            {/* Subtitle */}
-            <p className="text-lg sm:text-xl text-dark-400 mb-12 max-w-2xl mx-auto leading-relaxed">
-              Quatro cursos especializados para públicos diferentes. 
-              Inscreva-se apenas nos cursos que você precisa.
-            </p>
-
-            {/* Stats Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-3xl mx-auto">
-              {[
-                { icon: '📚', valor: '4', label: 'Cursos' },
-                { icon: '🎯', valor: '2.400+', label: 'Questões' },
-                { icon: '✨', valor: '111', label: 'Fases' },
-                { icon: '🆓', valor: 'Grátis', label: 'em 2025' },
-              ].map((stat, index) => (
-                <div key={index} className="stat-card">
-                  <div className="text-2xl mb-2">{stat.icon}</div>
-                  <div className="text-2xl sm:text-3xl font-bold text-white mb-1">
-                    {stat.valor}
-                  </div>
-                  <div className="text-dark-400 text-sm">{stat.label}</div>
+      <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+        {/* Card de Nível e XP */}
+        {nivelInfo && (
+          <div className={`bg-gradient-to-r ${getNivelCor(nivelInfo.nivel)} rounded-3xl p-6 text-white shadow-lg`}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center">
+                  <Trophy className="w-8 h-8" />
                 </div>
-              ))}
+                <div>
+                  <p className="text-white/80 text-sm">Nível {nivelInfo.nivel}</p>
+                  <p className="text-2xl font-black">{nivelInfo.titulo}</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-3xl font-black">{nivelInfo.xpTotal}</p>
+                <p className="text-white/80 text-sm">XP Total</p>
+              </div>
             </div>
-          </div>
-        </div>
-      </section>
 
-      {/* Cursos Section */}
-      <section id="cursos" className="py-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <h2 className="font-display text-3xl sm:text-4xl font-bold text-white mb-4">
-              Escolha seu curso
-            </h2>
-            <p className="text-dark-400 text-lg max-w-2xl mx-auto">
-              Cada curso é independente. Inscreva-se apenas naqueles que fazem sentido para você.
-            </p>
-          </div>
-
-          {/* Course Cards */}
-          <div className="grid md:grid-cols-2 gap-6">
-            {PLATAFORMAS.map((plataforma) => (
-              <div
-                key={plataforma.slug}
-                className="card-hover group relative overflow-hidden"
-              >
-                {/* Glow on hover */}
+            {/* Barra de progresso */}
+            <div className="mb-2">
+              <div className="flex justify-between text-sm text-white/80 mb-1">
+                <span>Progresso para {nivelInfo.proximoNivel}</span>
+                <span>{nivelInfo.progressoNivel}%</span>
+              </div>
+              <div className="h-3 bg-white/20 rounded-full overflow-hidden">
                 <div 
-                  className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-                  style={{ 
-                    background: `radial-gradient(circle at center, ${plataforma.cor}15 0%, transparent 70%)` 
-                  }}
+                  className="h-full bg-white rounded-full transition-all duration-500"
+                  style={{ width: `${nivelInfo.progressoNivel}%` }}
                 />
+              </div>
+              {nivelInfo.xpParaProximo > 0 && (
+                <p className="text-white/70 text-xs mt-1">Faltam {nivelInfo.xpParaProximo} XP</p>
+              )}
+            </div>
 
-                <div className="relative p-6">
-                  {/* Header */}
-                  <div className="flex items-start gap-4 mb-4">
-                    <div 
-                      className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl shrink-0"
-                      style={{ backgroundColor: `${plataforma.cor}20` }}
-                    >
-                      {plataforma.icone}
-                    </div>
-                    <div>
-                      <div 
-                        className="text-xs font-semibold uppercase tracking-wider mb-1"
-                        style={{ color: plataforma.cor }}
-                      >
-                        {plataforma.subtitulo}
-                      </div>
-                      <h3 className="font-display text-xl font-bold text-white">
-                        {plataforma.nome}
-                      </h3>
-                    </div>
-                  </div>
+            {/* Streak */}
+            {userStats && userStats.streak_atual > 0 && (
+              <div className="flex items-center gap-2 mt-4 bg-white/10 rounded-xl px-4 py-2 w-fit">
+                <Flame className="w-5 h-5 text-orange-300" />
+                <span className="font-bold">{userStats.streak_atual} dias</span>
+                <span className="text-white/70 text-sm">de streak!</span>
+              </div>
+            )}
+          </div>
+        )}
 
-                  {/* Description */}
-                  <p className="text-dark-400 text-sm mb-4 leading-relaxed">
-                    {plataforma.descricaoCompleta}
+        {/* Dica do Dia */}
+        <DicaDoDia />
+
+        {/* Estatísticas Rápidas */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-white rounded-2xl p-4 border border-gray-100">
+            <div className="flex items-center gap-2 mb-2">
+              <CheckCircle className="w-5 h-5 text-emerald-500" />
+              <span className="text-gray-500 text-sm">Questões</span>
+            </div>
+            <p className="text-2xl font-bold text-gray-900">{userStats?.questoes_respondidas || 0}</p>
+          </div>
+
+          <div className="bg-white rounded-2xl p-4 border border-gray-100">
+            <div className="flex items-center gap-2 mb-2">
+              <BarChart3 className="w-5 h-5 text-blue-500" />
+              <span className="text-gray-500 text-sm">Taxa</span>
+            </div>
+            <p className="text-2xl font-bold text-gray-900">{taxaAcerto}%</p>
+          </div>
+
+          <div className="bg-white rounded-2xl p-4 border border-gray-100">
+            <div className="flex items-center gap-2 mb-2">
+              <Zap className="w-5 h-5 text-amber-500" />
+              <span className="text-gray-500 text-sm">Batalhas</span>
+            </div>
+            <p className="text-2xl font-bold text-gray-900">{userStats?.batalhas_jogadas || 0}</p>
+          </div>
+
+          <div className="bg-white rounded-2xl p-4 border border-gray-100">
+            <div className="flex items-center gap-2 mb-2">
+              <Award className="w-5 h-5 text-purple-500" />
+              <span className="text-gray-500 text-sm">Perfeitas</span>
+            </div>
+            <p className="text-2xl font-bold text-gray-900">{userStats?.batalhas_perfeitas || 0}</p>
+          </div>
+        </div>
+
+        {/* Diagnóstico */}
+        {diagnostico ? (
+          <div className="bg-white rounded-2xl p-5 border border-gray-100">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-violet-100 rounded-xl flex items-center justify-center">
+                  <Target className="w-6 h-6 text-violet-600" />
+                </div>
+                <div>
+                  <p className="font-bold text-gray-900">Diagnóstico: {diagnostico.nivel}</p>
+                  <p className="text-sm text-gray-500">Nota TRI: {diagnostico.nota_tri} • {diagnostico.percentual_geral}% acertos</p>
+                </div>
+              </div>
+              <Link href="/diagnostico" className="text-violet-600 hover:text-violet-700">
+                <ChevronRight className="w-6 h-6" />
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <Link href="/diagnostico" className="block bg-gradient-to-r from-violet-500 to-purple-500 rounded-2xl p-5 text-white hover:from-violet-600 hover:to-purple-600 transition-all">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                  <Target className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="font-bold">Faça seu Diagnóstico</p>
+                  <p className="text-white/80 text-sm">Descubra seu nível em matemática</p>
+                </div>
+              </div>
+              <ChevronRight className="w-6 h-6" />
+            </div>
+          </Link>
+        )}
+
+        {/* Ações Rápidas */}
+        <div className="space-y-3">
+          <h2 className="text-lg font-bold text-gray-900">Estudar</h2>
+          
+          {/* Batalha Rápida */}
+          <Link href="/batalha" className="block bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl p-5 text-white hover:from-amber-600 hover:to-orange-600 transition-all">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                  <Zap className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="font-bold">Batalha Rápida</p>
+                  <p className="text-white/80 text-sm">5 questões • 30s cada • +150 XP</p>
+                </div>
+              </div>
+              <ChevronRight className="w-6 h-6" />
+            </div>
+          </Link>
+
+          {/* Caderno de Erros */}
+          <Link href="/caderno-erros" className="block bg-white rounded-2xl p-5 border border-gray-100 hover:border-red-200 hover:bg-red-50/50 transition-all">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
+                  <BookOpen className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <p className="font-bold text-gray-900">Caderno de Erros</p>
+                  <p className="text-gray-500 text-sm">
+                    {errosPendentes > 0 ? `${errosPendentes} questões para revisar` : 'Nenhum erro pendente'}
                   </p>
-
-                  {/* Features */}
-                  <div className="grid grid-cols-2 gap-2 mb-5">
-                    {plataforma.features.slice(0, 4).map((feature, index) => (
-                      <div key={index} className="flex items-center gap-2 text-xs text-dark-300">
-                        <span className="text-sm">{feature.icone}</span>
-                        <span>{feature.texto}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Stats */}
-                  <div className="flex gap-4 mb-6">
-                    {plataforma.stats.map((stat, index) => (
-                      <div 
-                        key={index}
-                        className="text-center px-3 py-2 rounded-lg"
-                        style={{ backgroundColor: `${plataforma.cor}10` }}
-                      >
-                        <div 
-                          className="text-lg font-bold"
-                          style={{ color: plataforma.cor }}
-                        >
-                          {stat.valor}
-                        </div>
-                        <div className="text-dark-400 text-xs">{stat.label}</div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* CTA Button */}
-                  <Link
-                    href={`/curso/${plataforma.slug}/entrar`}
-                    className="w-full py-3 rounded-xl font-semibold text-white text-center block transition-all hover:scale-[1.02] hover:shadow-lg"
-                    style={{ 
-                      background: `linear-gradient(135deg, ${plataforma.cor} 0%, ${plataforma.cor}cc 100%)`,
-                    }}
-                  >
-                    Inscrever-se Grátis
-                  </Link>
                 </div>
+              </div>
+              {errosPendentes > 0 && (
+                <span className="bg-red-500 text-white text-sm font-bold px-3 py-1 rounded-full">
+                  {errosPendentes}
+                </span>
+              )}
+            </div>
+          </Link>
+
+          {/* Módulos ENEM */}
+          <Link href="/plataforma/enem" className="block bg-white rounded-2xl p-5 border border-gray-100 hover:border-blue-200 hover:bg-blue-50/50 transition-all">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                  <TrendingUp className="w-6 h-6 text-blue-600" />
+                </div>
+                <div>
+                  <p className="font-bold text-gray-900">Módulos ENEM</p>
+                  <p className="text-gray-500 text-sm">Estude por tópicos</p>
+                </div>
+              </div>
+              <ChevronRight className="w-6 h-6 text-gray-400" />
+            </div>
+          </Link>
+        </div>
+
+        {/* Tabela de Níveis */}
+        <div className="bg-white rounded-2xl p-5 border border-gray-100">
+          <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <Star className="w-5 h-5 text-amber-500" />
+            Níveis e Títulos
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            {NIVEIS.map((n) => (
+              <div 
+                key={n.nivel}
+                className={`p-3 rounded-xl text-center ${
+                  nivelInfo && n.nivel === nivelInfo.nivel 
+                    ? 'bg-amber-100 border-2 border-amber-400' 
+                    : nivelInfo && n.nivel < nivelInfo.nivel
+                      ? 'bg-gray-100'
+                      : 'bg-gray-50 opacity-50'
+                }`}
+              >
+                <p className="text-lg font-bold text-gray-900">{n.nivel}</p>
+                <p className="text-xs text-gray-600">{n.titulo}</p>
+                <p className="text-xs text-gray-400">{n.xpNecessario} XP</p>
               </div>
             ))}
           </div>
         </div>
-      </section>
-
-      {/* Como funciona */}
-      <section id="sobre" className="py-20">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <h2 className="font-display text-3xl sm:text-4xl font-bold text-white mb-4">
-              Como funciona
-            </h2>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-6">
-            {[
-              { 
-                numero: '1', 
-                titulo: 'Escolha o curso', 
-                descricao: 'Selecione o curso que combina com seu objetivo' 
-              },
-              { 
-                numero: '2', 
-                titulo: 'Crie sua conta', 
-                descricao: 'Cadastro rápido com email e senha' 
-              },
-              { 
-                numero: '3', 
-                titulo: 'Comece a estudar', 
-                descricao: 'Acesse o conteúdo e acompanhe seu progresso' 
-              },
-            ].map((passo, index) => (
-              <div key={index} className="card-hover p-6 text-center">
-                <div className="w-12 h-12 bg-gradient-to-br from-accent-purple to-accent-blue rounded-full flex items-center justify-center mx-auto mb-4">
-                  <span className="text-white font-bold text-lg">{passo.numero}</span>
-                </div>
-                <h3 className="font-display text-lg font-bold text-white mb-2">
-                  {passo.titulo}
-                </h3>
-                <p className="text-dark-400 text-sm">
-                  {passo.descricao}
-                </p>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-12 text-center">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-full">
-              <span className="text-green-400 text-sm font-medium">
-                💡 Quer mais de um curso? Use a mesma conta e inscreva-se em quantos quiser!
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer id="contato" className="py-12 border-t border-dark-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-            {/* Logo */}
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-gradient-to-br from-accent-purple to-accent-blue rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">XY</span>
-              </div>
-              <span className="font-display font-bold text-white">XY Cursos</span>
-            </div>
-
-            {/* Links */}
-            <nav className="flex items-center gap-6 text-sm">
-              <a href="#" className="text-dark-400 hover:text-white transition-colors">
-                Termos de Uso
-              </a>
-              <a href="#" className="text-dark-400 hover:text-white transition-colors">
-                Privacidade
-              </a>
-              <a href="#" className="text-dark-400 hover:text-white transition-colors">
-                Contato
-              </a>
-            </nav>
-
-            {/* Copyright */}
-            <p className="text-dark-500 text-sm">
-              © 2025 XY Cursos. Todos os direitos reservados.
-            </p>
-          </div>
-        </div>
-      </footer>
-    </main>
+      </main>
+    </div>
   );
 }
