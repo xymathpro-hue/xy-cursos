@@ -22,6 +22,7 @@ import { getOrCreateUserStats, calcularNivel, NIVEIS } from '@/lib/xp-system';
 import { verificarConquistas, getConquistasUsuario } from '@/lib/conquistas-system';
 import DicaDoDia from '@/components/DicaDoDia';
 import ConquistaNotification from '@/components/ConquistaNotification';
+import MetaDiaria from '@/components/MetaDiaria';
 
 interface UserStats {
   xp_total: number;
@@ -232,6 +233,9 @@ export default function DashboardPage() {
             )}
           </div>
         )}
+
+        {/* Meta Diária */}
+        <MetaDiaria />
 
         <DicaDoDia />
 
