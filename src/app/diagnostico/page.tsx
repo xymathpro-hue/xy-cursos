@@ -14,7 +14,9 @@ import {
   TrendingUp,
   Award,
   Zap,
-  Flame
+  Flame,
+  Clock,
+  RotateCcw
 } from 'lucide-react';
 
 interface Questao {
@@ -36,6 +38,21 @@ interface Resposta {
   dificuldade: string;
 }
 
+interface DiagnosticoSalvo {
+  id: string;
+  nivel: string;
+  nota_tri: number;
+  total_acertos: number;
+  percentual_geral: number;
+  acertos_facil: number;
+  acertos_medio: number;
+  acertos_dificil: number;
+  percentual_facil: number;
+  percentual_medio: number;
+  percentual_dificil: number;
+  created_at: string;
+}
+
 export default function DiagnosticoPage() {
   const router = useRouter();
   const supabase = createClientComponentClient();
@@ -48,6 +65,8 @@ export default function DiagnosticoPage() {
   const [finalizado, setFinalizado] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  const [diagnosticoAnterior, setDiagnosticoAnterior] = useState<DiagnosticoSalvo | null>(null);
+  const [diasRestantes, setDiasRestantes] = useState(0);
 
   useEffect(() => {
     async function fetchData() {
@@ -58,6 +77,29 @@ export default function DiagnosticoPage() {
       }
       setUserId(user.id);
 
+      // Verificar se já fez diagnóstico
+      const { data: diagnostico } = await supabase
+        .from('diagnostico_resultados')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (diagnostico) {
+        const dataFez = new Date(diagnostico.created_at);
+        const agora = new Date();
+        const diffTime = agora.getTime() - dataFez.getTime();
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        const diasParaRefazer = 30 - diffDays;
+
+        if (diasParaRefazer > 0) {
+          setDiagnosticoAnterior(diagnostico);
+          setDiasRestantes(diasParaRefazer);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Buscar questões
       const { data: faceis } = await supabase
         .from('questoes')
         .select('*')
@@ -125,38 +167,6 @@ export default function DiagnosticoPage() {
     setQuestaoAtual(index);
   };
 
-  const handleFinalizar = async () => {
-    if (!userId) return;
-    setSalvando(true);
-
-    for (const resp of respostas) {
-      const q = questoes.find(quest => quest.id === resp.questaoId);
-      if (q) {
-        const correta = resp.letra === q.resposta_correta;
-        
-        await supabase.from('respostas_usuario').upsert({
-          user_id: userId,
-          questao_id: resp.questaoId,
-          resposta_selecionada: resp.letra,
-          correta
-        }, { onConflict: 'user_id,questao_id' });
-
-        if (!correta) {
-          await supabase.from('caderno_erros').upsert({
-            user_id: userId,
-            questao_id: resp.questaoId,
-            resposta_usuario: resp.letra,
-            revisado: false,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'user_id,questao_id' });
-        }
-      }
-    }
-
-    setSalvando(false);
-    setFinalizado(true);
-  };
-
   const calcularResultado = () => {
     let acertosFacil = 0, acertosMedio = 0, acertosDificil = 0;
     let totalFacil = 0, totalMedio = 0, totalDificil = 0;
@@ -189,28 +199,71 @@ export default function DiagnosticoPage() {
     let notaTRI = 0;
 
     if (percentualGeral >= 80) {
-      nivel = 'Avançado';
-      nivelCor = 'text-emerald-600';
-      nivelBg = 'bg-emerald-100';
+      nivel = 'Avançado'; nivelCor = 'text-emerald-600'; nivelBg = 'bg-emerald-100';
       notaTRI = 750 + (percentualGeral - 80) * 2.5;
     } else if (percentualGeral >= 60) {
-      nivel = 'Intermediário';
-      nivelCor = 'text-blue-600';
-      nivelBg = 'bg-blue-100';
+      nivel = 'Intermediário'; nivelCor = 'text-blue-600'; nivelBg = 'bg-blue-100';
       notaTRI = 600 + (percentualGeral - 60) * 7.5;
     } else if (percentualGeral >= 40) {
-      nivel = 'Básico';
-      nivelCor = 'text-amber-600';
-      nivelBg = 'bg-amber-100';
+      nivel = 'Básico'; nivelCor = 'text-amber-600'; nivelBg = 'bg-amber-100';
       notaTRI = 450 + (percentualGeral - 40) * 7.5;
     } else {
-      nivel = 'Iniciante';
-      nivelCor = 'text-red-600';
-      nivelBg = 'bg-red-100';
+      nivel = 'Iniciante'; nivelCor = 'text-red-600'; nivelBg = 'bg-red-100';
       notaTRI = 300 + percentualGeral * 3.75;
     }
 
     return { totalAcertos, percentualGeral, acertosFacil, acertosMedio, acertosDificil, percentualFacil, percentualMedio, percentualDificil, nivel, nivelCor, nivelBg, notaTRI: Math.round(notaTRI) };
+  };
+
+  const handleFinalizar = async () => {
+    if (!userId) return;
+    setSalvando(true);
+
+    const resultado = calcularResultado();
+
+    // Salvar resultado do diagnóstico
+    await supabase.from('diagnostico_resultados').upsert({
+      user_id: userId,
+      nivel: resultado.nivel,
+      nota_tri: resultado.notaTRI,
+      total_acertos: resultado.totalAcertos,
+      percentual_geral: resultado.percentualGeral,
+      acertos_facil: resultado.acertosFacil,
+      acertos_medio: resultado.acertosMedio,
+      acertos_dificil: resultado.acertosDificil,
+      percentual_facil: resultado.percentualFacil,
+      percentual_medio: resultado.percentualMedio,
+      percentual_dificil: resultado.percentualDificil,
+      created_at: new Date().toISOString()
+    }, { onConflict: 'user_id' });
+
+    // Salvar respostas
+    for (const resp of respostas) {
+      const q = questoes.find(quest => quest.id === resp.questaoId);
+      if (q) {
+        const correta = resp.letra === q.resposta_correta;
+        
+        await supabase.from('respostas_usuario').upsert({
+          user_id: userId,
+          questao_id: resp.questaoId,
+          resposta_selecionada: resp.letra,
+          correta
+        }, { onConflict: 'user_id,questao_id' });
+
+        if (!correta) {
+          await supabase.from('caderno_erros').upsert({
+            user_id: userId,
+            questao_id: resp.questaoId,
+            resposta_usuario: resp.letra,
+            revisado: false,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id,questao_id' });
+        }
+      }
+    }
+
+    setSalvando(false);
+    setFinalizado(true);
   };
 
   const getDificuldadeCor = (dif: string) => {
@@ -229,6 +282,15 @@ export default function DiagnosticoPage() {
     }
   };
 
+  const getNivelCor = (nivel: string) => {
+    switch (nivel) {
+      case 'Avançado': return { cor: 'text-emerald-600', bg: 'bg-emerald-100' };
+      case 'Intermediário': return { cor: 'text-blue-600', bg: 'bg-blue-100' };
+      case 'Básico': return { cor: 'text-amber-600', bg: 'bg-amber-100' };
+      default: return { cor: 'text-red-600', bg: 'bg-red-100' };
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
@@ -236,6 +298,120 @@ export default function DiagnosticoPage() {
       </div>
     );
   }
+  // Tela de resultado anterior (já fez e não pode refazer)
+  if (diagnosticoAnterior) {
+    const cores = getNivelCor(diagnosticoAnterior.nivel);
+    const dataFez = new Date(diagnosticoAnterior.created_at);
+    const erros = 30 - diagnosticoAnterior.total_acertos;
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-violet-500 to-purple-600 p-4">
+        <div className="max-w-2xl mx-auto">
+          <div className="bg-white rounded-3xl p-8 text-center shadow-2xl">
+            <div className={`w-20 h-20 ${cores.bg} rounded-full flex items-center justify-center mx-auto mb-4`}>
+              <Award className={`w-10 h-10 ${cores.cor}`} />
+            </div>
+            
+            <h2 className="text-2xl font-black text-gray-900 mb-1">Seu Diagnóstico</h2>
+            <p className="text-gray-500 mb-6">
+              Realizado em {dataFez.toLocaleDateString('pt-BR')}
+            </p>
+
+            <div className={`${cores.bg} rounded-2xl p-6 mb-6`}>
+              <p className="text-sm text-gray-500 mb-1">Seu Nível</p>
+              <p className={`text-3xl font-black ${cores.cor}`}>{diagnosticoAnterior.nivel}</p>
+              <div className="mt-3 flex items-center justify-center gap-2">
+                <TrendingUp className={`w-5 h-5 ${cores.cor}`} />
+                <span className={`text-lg font-bold ${cores.cor}`}>
+                  Nota TRI: {diagnosticoAnterior.nota_tri}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="bg-emerald-50 rounded-xl p-4">
+                <p className="text-2xl font-bold text-emerald-600">{diagnosticoAnterior.total_acertos}</p>
+                <p className="text-emerald-700 text-sm">Acertos</p>
+              </div>
+              <div className="bg-red-50 rounded-xl p-4">
+                <p className="text-2xl font-bold text-red-600">{erros}</p>
+                <p className="text-red-700 text-sm">Erros</p>
+              </div>
+              <div className="bg-blue-50 rounded-xl p-4">
+                <p className="text-2xl font-bold text-blue-600">{diagnosticoAnterior.percentual_geral}%</p>
+                <p className="text-blue-700 text-sm">Taxa</p>
+              </div>
+            </div>
+
+            <div className="bg-gray-50 rounded-2xl p-4 mb-6">
+              <p className="text-sm font-medium text-gray-700 mb-4">Desempenho por Dificuldade</p>
+              
+              <div className="space-y-3">
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-emerald-700 font-medium">🟢 Fácil</span>
+                    <span className="text-gray-600">{diagnosticoAnterior.acertos_facil}/10 ({diagnosticoAnterior.percentual_facil}%)</span>
+                  </div>
+                  <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-emerald-500" style={{ width: `${diagnosticoAnterior.percentual_facil}%` }} />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-amber-700 font-medium">🟡 Médio</span>
+                    <span className="text-gray-600">{diagnosticoAnterior.acertos_medio}/10 ({diagnosticoAnterior.percentual_medio}%)</span>
+                  </div>
+                  <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-amber-500" style={{ width: `${diagnosticoAnterior.percentual_medio}%` }} />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-red-700 font-medium">🔴 Difícil</span>
+                    <span className="text-gray-600">{diagnosticoAnterior.acertos_dificil}/10 ({diagnosticoAnterior.percentual_dificil}%)</span>
+                  </div>
+                  <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-red-500" style={{ width: `${diagnosticoAnterior.percentual_dificil}%` }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Aviso de quando pode refazer */}
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6">
+              <div className="flex items-center justify-center gap-2 text-amber-700">
+                <Clock className="w-5 h-5" />
+                <span className="font-medium">
+                  Novo diagnóstico disponível em {diasRestantes} dia{diasRestantes > 1 ? 's' : ''}
+                </span>
+              </div>
+              <p className="text-amber-600 text-sm mt-1">
+                Continue estudando e melhore sua nota!
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <Link href="/caderno-erros" className="w-full py-3 rounded-xl border-2 border-red-200 text-red-600 font-medium hover:bg-red-50 flex items-center justify-center gap-2">
+                <BookOpen className="w-5 h-5" />
+                Revisar Erros
+              </Link>
+              <Link href="/batalha" className="w-full py-3 rounded-xl border-2 border-amber-200 text-amber-600 font-medium hover:bg-amber-50 flex items-center justify-center gap-2">
+                <Zap className="w-5 h-5" />
+                Batalha Rápida
+              </Link>
+              <Link href="/dashboard" className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 text-white font-bold hover:from-violet-600 hover:to-purple-600 flex items-center justify-center gap-2">
+                <Home className="w-5 h-5" />
+                Ir para Dashboard
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Tela inicial
   if (!iniciado) {
     return (
@@ -270,9 +446,7 @@ export default function DiagnosticoPage() {
                   <p className="text-xs text-gray-500">10 Difíceis</p>
                 </div>
               </div>
-              <p className="text-violet-700 text-sm">
-                30 questões para avaliar seu conhecimento
-              </p>
+              <p className="text-violet-700 text-sm">30 questões para avaliar seu conhecimento</p>
             </div>
 
             <div className="space-y-3 mb-6">
@@ -285,8 +459,8 @@ export default function DiagnosticoPage() {
                 <span>Navegue entre as questões livremente</span>
               </div>
               <div className="flex items-center gap-3 text-left text-sm text-gray-600">
-                <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" />
-                <span>Receba seu nível e nota TRI estimada</span>
+                <RotateCcw className="w-5 h-5 text-amber-500 shrink-0" />
+                <span>Pode refazer após 30 dias</span>
               </div>
             </div>
 
@@ -306,7 +480,7 @@ export default function DiagnosticoPage() {
     );
   }
 
-  // Tela de resultado
+  // Tela de resultado (após finalizar)
   if (finalizado) {
     const resultado = calcularResultado();
     const erros = questoes.length - resultado.totalAcertos;
@@ -350,7 +524,6 @@ export default function DiagnosticoPage() {
 
             <div className="bg-gray-50 rounded-2xl p-4 mb-6">
               <p className="text-sm font-medium text-gray-700 mb-4">Desempenho por Dificuldade</p>
-              
               <div className="space-y-3">
                 <div>
                   <div className="flex justify-between text-sm mb-1">
@@ -361,7 +534,6 @@ export default function DiagnosticoPage() {
                     <div className="h-full bg-emerald-500" style={{ width: `${resultado.percentualFacil}%` }} />
                   </div>
                 </div>
-
                 <div>
                   <div className="flex justify-between text-sm mb-1">
                     <span className="text-amber-700 font-medium">🟡 Médio</span>
@@ -371,7 +543,6 @@ export default function DiagnosticoPage() {
                     <div className="h-full bg-amber-500" style={{ width: `${resultado.percentualMedio}%` }} />
                   </div>
                 </div>
-
                 <div>
                   <div className="flex justify-between text-sm mb-1">
                     <span className="text-red-700 font-medium">🔴 Difícil</span>
@@ -387,15 +558,9 @@ export default function DiagnosticoPage() {
             <div className="bg-violet-50 rounded-2xl p-4 mb-6 text-left">
               <p className="text-sm font-medium text-violet-800 mb-3">📋 Plano de Estudos:</p>
               <ul className="space-y-2 text-sm text-violet-700">
-                {resultado.percentualFacil < 80 && (
-                  <li>• Reforce conceitos básicos com questões Fáceis</li>
-                )}
-                {resultado.percentualMedio < 60 && (
-                  <li>• Pratique mais questões de nível Médio</li>
-                )}
-                {resultado.percentualGeral >= 70 && (
-                  <li>• Ótimo! Foque nas Batalhas Rápidas para velocidade</li>
-                )}
+                {resultado.percentualFacil < 80 && <li>• Reforce conceitos básicos com questões Fáceis</li>}
+                {resultado.percentualMedio < 60 && <li>• Pratique mais questões de nível Médio</li>}
+                {resultado.percentualGeral >= 70 && <li>• Ótimo! Foque nas Batalhas Rápidas</li>}
                 <li>• Revise os {erros} erros no Caderno de Erros</li>
               </ul>
             </div>
@@ -407,7 +572,7 @@ export default function DiagnosticoPage() {
                   Revisar {erros} Erros
                 </Link>
               )}
-              <Link href="/dashboard" className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 text-white font-bold hover:from-violet-600 hover:to-purple-600 flex items-center justify-center gap-2">
+              <Link href="/dashboard" className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 text-white font-bold flex items-center justify-center gap-2">
                 <Home className="w-5 h-5" />
                 Ir para Dashboard
               </Link>
@@ -527,4 +692,4 @@ export default function DiagnosticoPage() {
       </main>
     </div>
   );
-        }
+}
