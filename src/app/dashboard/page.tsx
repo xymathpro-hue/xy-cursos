@@ -5,170 +5,114 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { 
-  Flame, 
   Zap, 
-  Trophy, 
   Target, 
   BookOpen, 
-  Swords,
-  ChevronRight,
+  Flame,
+  Star,
+  Trophy,
   TrendingUp,
-  Settings,
-  BookX,
-  ClipboardCheck,
-  Calendar,
+  CheckCircle,
+  XCircle,
+  LogOut,
+  ChevronRight,
   Award,
+  Calendar,
   BarChart3
 } from 'lucide-react';
+import { getOrCreateUserStats, calcularNivel, NIVEIS } from '@/lib/xp-system';
 
-interface Profile {
-  nome: string;
+interface UserStats {
   xp_total: number;
   nivel: number;
-  streak_atual: number;
-  maior_streak: number;
-  onboarding_completo: boolean;
-  meta_pontuacao: number;
-  data_enem: string;
-}
-
-interface Modulo {
-  id: string;
-  numero: number;
   titulo: string;
-  descricao: string;
-  icone: string;
-}
-
-interface ProgressoModulo {
-  modulo_id: string;
-  aulas_concluidas: number;
-  total_aulas: number;
+  streak_atual: number;
+  streak_max: number;
+  ultimo_estudo: string;
   questoes_respondidas: number;
   questoes_corretas: number;
+  batalhas_jogadas: number;
+  batalhas_perfeitas: number;
+}
+
+interface DiagnosticoResult {
+  nivel: string;
+  nota_tri: number;
+  percentual_geral: number;
+  created_at: string;
 }
 
 export default function DashboardPage() {
   const router = useRouter();
   const supabase = createClientComponentClient();
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [modulos, setModulos] = useState<Modulo[]>([]);
-  const [progressoModulos, setProgressoModulos] = useState<{[key: string]: ProgressoModulo}>({});
-  const [stats, setStats] = useState({ questoes: 0, acertos: 0, erros: 0, taxa: 0 });
-  const [errosCount, setErrosCount] = useState(0);
+
   const [loading, setLoading] = useState(true);
+  const [userName, setUserName] = useState('');
+  const [userStats, setUserStats] = useState<UserStats | null>(null);
+  const [diagnostico, setDiagnostico] = useState<DiagnosticoResult | null>(null);
+  const [errosPendentes, setErrosPendentes] = useState(0);
 
   useEffect(() => {
     async function fetchData() {
       const { data: { user } } = await supabase.auth.getUser();
-      
       if (!user) {
         router.push('/login');
         return;
       }
 
-      // Buscar perfil
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
+      // Nome do usuário
+      const nome = user.user_metadata?.nome || user.email?.split('@')[0] || 'Estudante';
+      setUserName(nome);
 
-      if (profileData) {
-        setProfile(profileData);
+      // Stats do usuário
+      const stats = await getOrCreateUserStats(supabase, user.id);
+      if (stats) {
+        setUserStats(stats);
       }
 
-      // Buscar módulos ENEM
-      const { data: modulosData } = await supabase
-        .from('modulos')
-        .select('*')
-        .eq('plataforma', 'enem')
-        .eq('ativo', true)
-        .order('ordem');
+      // Diagnóstico
+      const { data: diagData } = await supabase
+        .from('diagnostico_resultados')
+        .select('nivel, nota_tri, percentual_geral, created_at')
+        .eq('user_id', user.id)
+        .single();
+      
+      if (diagData) {
+        setDiagnostico(diagData);
+      }
 
-      if (modulosData) setModulos(modulosData);
-
-      // Buscar erros no caderno
-      const { count: errosData } = await supabase
+      // Erros pendentes
+      const { count } = await supabase
         .from('caderno_erros')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id)
         .eq('revisado', false);
-
-      setErrosCount(errosData || 0);
-
-      // Buscar progresso de cada módulo
-      const progressoTemp: {[key: string]: ProgressoModulo} = {};
       
-      for (const modulo of modulosData || []) {
-        const { data: aulasData } = await supabase
-          .from('aulas')
-          .select('id')
-          .eq('modulo_id', modulo.id);
-        
-        const totalAulas = aulasData?.length || 0;
-
-        const { data: progressoAulas } = await supabase
-          .from('progresso_aulas')
-          .select('aula_id')
-          .eq('user_id', user.id)
-          .eq('concluida', true)
-          .in('aula_id', aulasData?.map(a => a.id) || []);
-
-        const aulasConcluidas = progressoAulas?.length || 0;
-
-        const { data: faseData } = await supabase
-          .from('fases')
-          .select('id')
-          .eq('modulo_id', modulo.id)
-          .single();
-
-        let questoesRespondidas = 0;
-        let questoesCorretas = 0;
-
-        if (faseData) {
-          const { data: respostasData } = await supabase
-            .from('respostas_usuario')
-            .select('correta')
-            .eq('user_id', user.id);
-
-          questoesRespondidas = respostasData?.length || 0;
-          questoesCorretas = respostasData?.filter(r => r.correta).length || 0;
-        }
-
-        progressoTemp[modulo.id] = {
-          modulo_id: modulo.id,
-          aulas_concluidas: aulasConcluidas,
-          total_aulas: totalAulas,
-          questoes_respondidas: questoesRespondidas,
-          questoes_corretas: questoesCorretas
-        };
-      }
-
-      setProgressoModulos(progressoTemp);
-
-      // Calcular estatísticas gerais
-      const { data: todasRespostas } = await supabase
-        .from('respostas_usuario')
-        .select('correta')
-        .eq('user_id', user.id);
-
-      const totalQuestoes = todasRespostas?.length || 0;
-      const totalAcertos = todasRespostas?.filter(r => r.correta).length || 0;
-      const totalErros = totalQuestoes - totalAcertos;
-
-      setStats({
-        questoes: totalQuestoes,
-        acertos: totalAcertos,
-        erros: totalErros,
-        taxa: totalQuestoes > 0 ? Math.round((totalAcertos / totalQuestoes) * 100) : 0
-      });
+      setErrosPendentes(count || 0);
 
       setLoading(false);
     }
 
     fetchData();
   }, [supabase, router]);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
+
+  const nivelInfo = userStats ? calcularNivel(userStats.xp_total) : null;
+  const taxaAcerto = userStats && userStats.questoes_respondidas > 0 
+    ? Math.round((userStats.questoes_corretas / userStats.questoes_respondidas) * 100) 
+    : 0;
+
+  const getNivelCor = (nivel: number) => {
+    if (nivel >= 9) return 'from-yellow-400 to-amber-500';
+    if (nivel >= 7) return 'from-orange-400 to-red-500';
+    if (nivel >= 5) return 'from-purple-400 to-pink-500';
+    if (nivel >= 3) return 'from-blue-400 to-indigo-500';
+    return 'from-emerald-400 to-teal-500';
+  };
 
   if (loading) {
     return (
@@ -178,277 +122,226 @@ export default function DashboardPage() {
     );
   }
 
-  const xpParaProximoNivel = 1000;
-  const xpAtual = profile?.xp_total || 0;
-  const progressoXP = (xpAtual % xpParaProximoNivel) / xpParaProximoNivel * 100;
-
-  // Calcular dias até o ENEM
-  const diasAteEnem = profile?.data_enem 
-    ? Math.ceil((new Date(profile.data_enem).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
-    : null;
-
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 py-4">
+        <div className="max-w-4xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
-                <span className="text-white font-bold">XY</span>
-              </div>
-              <div>
-                <p className="text-gray-500 text-sm">Olá,</p>
-                <p className="font-bold text-gray-900">{profile?.nome || 'Estudante'}</p>
-              </div>
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">Olá, {userName}! 👋</h1>
+              <p className="text-sm text-gray-500">Continue sua jornada de estudos</p>
             </div>
-            <div className="flex items-center gap-3">
-              <Link href="/perfil" className="p-2 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100">
-                <Settings className="w-5 h-5" />
-              </Link>
-            </div>
+            <button
+              onClick={handleLogout}
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-6">
-        {/* Card de Status Principal */}
-        <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-6 mb-6 text-white">
-          <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-            <div className="flex items-center gap-6">
-              {/* Streak */}
-              <div className="flex items-center gap-2">
-                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-                  <Flame className="w-6 h-6 text-orange-300" />
+      <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+        {/* Card de Nível e XP */}
+        {nivelInfo && (
+          <div className={`bg-gradient-to-r ${getNivelCor(nivelInfo.nivel)} rounded-3xl p-6 text-white shadow-lg`}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center">
+                  <Trophy className="w-8 h-8" />
                 </div>
                 <div>
-                  <p className="text-2xl font-black">{profile?.streak_atual || 0}</p>
-                  <p className="text-blue-100 text-sm">dias seguidos</p>
+                  <p className="text-white/80 text-sm">Nível {nivelInfo.nivel}</p>
+                  <p className="text-2xl font-black">{nivelInfo.titulo}</p>
                 </div>
               </div>
-
-              {/* Meta ENEM */}
-              {profile?.meta_pontuacao && (
-                <div className="hidden sm:flex items-center gap-2">
-                  <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-                    <Target className="w-6 h-6 text-emerald-300" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-black">{profile.meta_pontuacao}+</p>
-                    <p className="text-blue-100 text-sm">meta TRI</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Dias até ENEM */}
-              {diasAteEnem && diasAteEnem > 0 && (
-                <div className="hidden md:flex items-center gap-2">
-                  <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-                    <Calendar className="w-6 h-6 text-yellow-300" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-black">{diasAteEnem}</p>
-                    <p className="text-blue-100 text-sm">dias p/ ENEM</p>
-                  </div>
-                </div>
-              )}
-            </div>
-            
-            {/* Nível e XP */}
-            <div className="text-right">
-              <div className="flex items-center gap-2 justify-end">
-                <Zap className="w-5 h-5 text-yellow-300" />
-                <p className="text-xl font-bold">Nível {profile?.nivel || 1}</p>
+              <div className="text-right">
+                <p className="text-3xl font-black">{nivelInfo.xpTotal}</p>
+                <p className="text-white/80 text-sm">XP Total</p>
               </div>
-              <p className="text-blue-100 text-sm">{xpAtual} XP</p>
+            </div>
+
+            {/* Barra de progresso */}
+            <div className="mb-2">
+              <div className="flex justify-between text-sm text-white/80 mb-1">
+                <span>Progresso para {nivelInfo.proximoNivel}</span>
+                <span>{nivelInfo.progressoNivel}%</span>
+              </div>
+              <div className="h-3 bg-white/20 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-white rounded-full transition-all duration-500"
+                  style={{ width: `${nivelInfo.progressoNivel}%` }}
+                />
+              </div>
+              {nivelInfo.xpParaProximo > 0 && (
+                <p className="text-white/70 text-xs mt-1">Faltam {nivelInfo.xpParaProximo} XP</p>
+              )}
+            </div>
+
+            {/* Streak */}
+            {userStats && userStats.streak_atual > 0 && (
+              <div className="flex items-center gap-2 mt-4 bg-white/10 rounded-xl px-4 py-2 w-fit">
+                <Flame className="w-5 h-5 text-orange-300" />
+                <span className="font-bold">{userStats.streak_atual} dias</span>
+                <span className="text-white/70 text-sm">de streak!</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Estatísticas Rápidas */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-white rounded-2xl p-4 border border-gray-100">
+            <div className="flex items-center gap-2 mb-2">
+              <CheckCircle className="w-5 h-5 text-emerald-500" />
+              <span className="text-gray-500 text-sm">Questões</span>
+            </div>
+            <p className="text-2xl font-bold text-gray-900">{userStats?.questoes_respondidas || 0}</p>
+          </div>
+
+          <div className="bg-white rounded-2xl p-4 border border-gray-100">
+            <div className="flex items-center gap-2 mb-2">
+              <BarChart3 className="w-5 h-5 text-blue-500" />
+              <span className="text-gray-500 text-sm">Taxa</span>
+            </div>
+            <p className="text-2xl font-bold text-gray-900">{taxaAcerto}%</p>
+          </div>
+
+          <div className="bg-white rounded-2xl p-4 border border-gray-100">
+            <div className="flex items-center gap-2 mb-2">
+              <Zap className="w-5 h-5 text-amber-500" />
+              <span className="text-gray-500 text-sm">Batalhas</span>
+            </div>
+            <p className="text-2xl font-bold text-gray-900">{userStats?.batalhas_jogadas || 0}</p>
+          </div>
+
+          <div className="bg-white rounded-2xl p-4 border border-gray-100">
+            <div className="flex items-center gap-2 mb-2">
+              <Award className="w-5 h-5 text-purple-500" />
+              <span className="text-gray-500 text-sm">Perfeitas</span>
+            </div>
+            <p className="text-2xl font-bold text-gray-900">{userStats?.batalhas_perfeitas || 0}</p>
+          </div>
+        </div>
+
+        {/* Diagnóstico */}
+        {diagnostico ? (
+          <div className="bg-white rounded-2xl p-5 border border-gray-100">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-violet-100 rounded-xl flex items-center justify-center">
+                  <Target className="w-6 h-6 text-violet-600" />
+                </div>
+                <div>
+                  <p className="font-bold text-gray-900">Diagnóstico: {diagnostico.nivel}</p>
+                  <p className="text-sm text-gray-500">Nota TRI: {diagnostico.nota_tri} • {diagnostico.percentual_geral}% acertos</p>
+                </div>
+              </div>
+              <Link href="/diagnostico" className="text-violet-600 hover:text-violet-700">
+                <ChevronRight className="w-6 h-6" />
+              </Link>
             </div>
           </div>
-
-          {/* Barra de XP */}
-          <div className="h-2 bg-white/20 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-gradient-to-r from-yellow-300 to-orange-400 rounded-full transition-all"
-              style={{ width: `${progressoXP}%` }}
-            ></div>
-          </div>
-          <p className="text-blue-100 text-xs mt-1 text-right">{Math.round(progressoXP)}% para Nível {(profile?.nivel || 1) + 1}</p>
-        </div>
-
-        {/* Estatísticas Detalhadas */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-            <Target className="w-6 h-6 text-blue-500 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-gray-900">{stats.questoes}</p>
-            <p className="text-gray-500 text-sm">Questões</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-            <Trophy className="w-6 h-6 text-emerald-500 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-gray-900">{stats.acertos}</p>
-            <p className="text-gray-500 text-sm">Acertos</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-            <BookX className="w-6 h-6 text-red-500 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-gray-900">{stats.erros}</p>
-            <p className="text-gray-500 text-sm">Erros</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-            <TrendingUp className="w-6 h-6 text-amber-500 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-gray-900">{stats.taxa}%</p>
-            <p className="text-gray-500 text-sm">Taxa</p>
-          </div>
-        </div>
+        ) : (
+          <Link href="/diagnostico" className="block bg-gradient-to-r from-violet-500 to-purple-500 rounded-2xl p-5 text-white hover:from-violet-600 hover:to-purple-600 transition-all">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                  <Target className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="font-bold">Faça seu Diagnóstico</p>
+                  <p className="text-white/80 text-sm">Descubra seu nível em matemática</p>
+                </div>
+              </div>
+              <ChevronRight className="w-6 h-6" />
+            </div>
+          </Link>
+        )}
 
         {/* Ações Rápidas */}
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Ações Rápidas</h2>
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <Link
-            href="/plataforma/enem"
-            className="bg-white border-2 border-blue-200 rounded-xl p-4 hover:border-blue-400 hover:shadow-md transition-all"
-          >
-            <div className="flex flex-col items-center text-center gap-3">
-              <div className="w-14 h-14 bg-blue-500 rounded-xl flex items-center justify-center">
-                <BookOpen className="w-7 h-7 text-white" />
-              </div>
-              <div>
-                <h3 className="font-bold text-gray-900">Continuar Estudando</h3>
-                <p className="text-gray-500 text-sm">Retome de onde parou</p>
-              </div>
-            </div>
-          </Link>
-
-          <Link
-            href="/batalha"
-            className="bg-white border-2 border-amber-200 rounded-xl p-4 hover:border-amber-400 hover:shadow-md transition-all"
-          >
-            <div className="flex flex-col items-center text-center gap-3">
-              <div className="w-14 h-14 bg-gradient-to-br from-amber-400 to-orange-500 rounded-xl flex items-center justify-center">
-                <Swords className="w-7 h-7 text-white" />
-              </div>
-              <div>
-                <h3 className="font-bold text-gray-900">Batalha Rápida</h3>
-                <p className="text-gray-500 text-sm">5 questões cronometradas</p>
-              </div>
-            </div>
-          </Link>
-
-          <Link
-            href="/caderno-erros"
-            className="bg-white border-2 border-red-200 rounded-xl p-4 hover:border-red-400 hover:shadow-md transition-all relative"
-          >
-            <div className="flex flex-col items-center text-center gap-3">
-              <div className="w-14 h-14 bg-gradient-to-br from-red-400 to-rose-500 rounded-xl flex items-center justify-center relative">
-                <BookX className="w-7 h-7 text-white" />
-                {errosCount > 0 && (
-                  <span className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
-                    {errosCount}
-                  </span>
-                )}
-              </div>
-              <div>
-                <h3 className="font-bold text-gray-900">Caderno de Erros</h3>
-                <p className="text-gray-500 text-sm">{errosCount} para revisar</p>
-              </div>
-            </div>
-          </Link>
-
-          <Link
-            href="/diagnostico"
-            className="bg-white border-2 border-purple-200 rounded-xl p-4 hover:border-purple-400 hover:shadow-md transition-all"
-          >
-            <div className="flex flex-col items-center text-center gap-3">
-              <div className="w-14 h-14 bg-gradient-to-br from-purple-400 to-indigo-500 rounded-xl flex items-center justify-center">
-                <ClipboardCheck className="w-7 h-7 text-white" />
-              </div>
-              <div>
-                <h3 className="font-bold text-gray-900">Diagnóstico</h3>
-                <p className="text-gray-500 text-sm">Descubra seu nível</p>
-              </div>
-            </div>
-          </Link>
-        </div>
-
-        {/* Módulos */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-blue-500" />
-              Módulos de Estudo
-            </h2>
-            <Link href="/plataforma/enem" className="text-blue-500 text-sm font-medium hover:underline">
-              Ver todos →
-            </Link>
-          </div>
+        <div className="space-y-3">
+          <h2 className="text-lg font-bold text-gray-900">Estudar</h2>
           
-          <div className="space-y-3">
-            {modulos.slice(0, 5).map((modulo) => {
-              const progresso = progressoModulos[modulo.id];
-              const aulasPercent = progresso?.total_aulas > 0 
-                ? Math.round((progresso.aulas_concluidas / progresso.total_aulas) * 100) 
-                : 0;
+          {/* Batalha Rápida */}
+          <Link href="/batalha" className="block bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl p-5 text-white hover:from-amber-600 hover:to-orange-600 transition-all">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                  <Zap className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="font-bold">Batalha Rápida</p>
+                  <p className="text-white/80 text-sm">5 questões • 30s cada • +150 XP</p>
+                </div>
+              </div>
+              <ChevronRight className="w-6 h-6" />
+            </div>
+          </Link>
 
-              return (
-                <Link
-                  key={modulo.id}
-                  href={`/plataforma/enem/modulo/${modulo.id}`}
-                  className="block bg-white rounded-xl border border-gray-200 p-4 hover:border-blue-300 hover:shadow-md transition-all"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center text-2xl">
-                      {modulo.icone || '📚'}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-gray-400 text-sm">Módulo {modulo.numero}</span>
-                        {aulasPercent === 100 && (
-                          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full flex items-center gap-1">
-                            <Award className="w-3 h-3" /> Completo
-                          </span>
-                        )}
-                      </div>
-                      <h3 className="font-semibold text-gray-900 truncate">{modulo.titulo}</h3>
-                      <div className="flex items-center gap-4 mt-1">
-                        <div className="flex-1">
-                          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-blue-500 rounded-full transition-all"
-                              style={{ width: `${aulasPercent}%` }}
-                            ></div>
-                          </div>
-                        </div>
-                        <span className="text-gray-500 text-sm">{aulasPercent}%</span>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-5 h-5 text-gray-400" />
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Desempenho por Módulo (resumo) */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
-            <BarChart3 className="w-5 h-5 text-blue-500" />
-            Seu Desempenho
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            {modulos.slice(0, 5).map((modulo) => {
-              const progresso = progressoModulos[modulo.id];
-              const taxa = progresso?.questoes_respondidas > 0 
-                ? Math.round((progresso.questoes_corretas / progresso.questoes_respondidas) * 100) 
-                : 0;
-              
-              return (
-                <div key={modulo.id} className="text-center p-3 bg-gray-50 rounded-xl">
-                  <div className="text-2xl mb-1">{modulo.icone || '📚'}</div>
-                  <p className="text-xs text-gray-500 truncate">{modulo.titulo}</p>
-                  <p className={`text-lg font-bold ${taxa >= 70 ? 'text-emerald-600' : taxa >= 50 ? 'text-amber-600' : 'text-gray-400'}`}>
-                    {progresso?.questoes_respondidas > 0 ? `${taxa}%` : '-'}
+          {/* Caderno de Erros */}
+          <Link href="/caderno-erros" className="block bg-white rounded-2xl p-5 border border-gray-100 hover:border-red-200 hover:bg-red-50/50 transition-all">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
+                  <BookOpen className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <p className="font-bold text-gray-900">Caderno de Erros</p>
+                  <p className="text-gray-500 text-sm">
+                    {errosPendentes > 0 ? `${errosPendentes} questões para revisar` : 'Nenhum erro pendente'}
                   </p>
                 </div>
-              );
-            })}
+              </div>
+              {errosPendentes > 0 && (
+                <span className="bg-red-500 text-white text-sm font-bold px-3 py-1 rounded-full">
+                  {errosPendentes}
+                </span>
+              )}
+            </div>
+          </Link>
+
+          {/* Módulos ENEM */}
+          <Link href="/plataforma/enem" className="block bg-white rounded-2xl p-5 border border-gray-100 hover:border-blue-200 hover:bg-blue-50/50 transition-all">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                  <TrendingUp className="w-6 h-6 text-blue-600" />
+                </div>
+                <div>
+                  <p className="font-bold text-gray-900">Módulos ENEM</p>
+                  <p className="text-gray-500 text-sm">Estude por tópicos</p>
+                </div>
+              </div>
+              <ChevronRight className="w-6 h-6 text-gray-400" />
+            </div>
+          </Link>
+        </div>
+
+        {/* Tabela de Níveis */}
+        <div className="bg-white rounded-2xl p-5 border border-gray-100">
+          <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <Star className="w-5 h-5 text-amber-500" />
+            Níveis e Títulos
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            {NIVEIS.map((n) => (
+              <div 
+                key={n.nivel}
+                className={`p-3 rounded-xl text-center ${
+                  nivelInfo && n.nivel === nivelInfo.nivel 
+                    ? 'bg-amber-100 border-2 border-amber-400' 
+                    : nivelInfo && n.nivel < nivelInfo.nivel
+                      ? 'bg-gray-100'
+                      : 'bg-gray-50 opacity-50'
+                }`}
+              >
+                <p className="text-lg font-bold text-gray-900">{n.nivel}</p>
+                <p className="text-xs text-gray-600">{n.titulo}</p>
+                <p className="text-xs text-gray-400">{n.xpNecessario} XP</p>
+              </div>
+            ))}
           </div>
         </div>
       </main>
