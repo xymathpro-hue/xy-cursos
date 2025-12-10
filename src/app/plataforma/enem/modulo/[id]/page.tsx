@@ -11,9 +11,7 @@ import {
   Lock, 
   Play, 
   Clock,
-  FileText,
-  Trophy,
-  Target
+  Trophy
 } from 'lucide-react'
 
 interface Modulo {
@@ -30,12 +28,6 @@ interface Aula {
   descricao: string
   duracao_minutos: number
   ordem: number
-}
-
-interface Fase {
-  id: string
-  titulo: string
-  total_questoes: number
 }
 
 interface SimuladoModulo {
@@ -66,7 +58,6 @@ export default function ModuloPage() {
   
   const [modulo, setModulo] = useState<Modulo | null>(null)
   const [aulas, setAulas] = useState<Aula[]>([])
-  const [fase, setFase] = useState<Fase | null>(null)
   const [simulado, setSimulado] = useState<SimuladoModulo | null>(null)
   const [progresso, setProgresso] = useState<Record<string, boolean>>({})
   const [ultimaTentativa, setUltimaTentativa] = useState<UltimaTentativa | null>(null)
@@ -100,17 +91,6 @@ export default function ModuloPage() {
         .order('numero', { ascending: true })
 
       setAulas(aulasData || [])
-
-      // Buscar fase do módulo (para questões)
-      const { data: faseData } = await supabase
-        .from('fases')
-        .select('*')
-        .eq('modulo_id', moduloId)
-        .single()
-
-      if (faseData) {
-        setFase(faseData)
-      }
 
       // Buscar simulado do módulo
       const { data: simuladoData } = await supabase
@@ -371,29 +351,6 @@ export default function ModuloPage() {
             )
           })}
         </div>
-
-        {/* Card Praticar Questões */}
-        {fase && (
-          <Link
-            href={`/plataforma/enem/fase/${fase.id}`}
-            className="block bg-white rounded-xl shadow-sm hover:shadow-md transition-all p-6 border border-gray-100"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                  <Target className="w-6 h-6 text-blue-600" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-gray-800">Praticar Questões</h3>
-                  <p className="text-sm text-gray-500">{fase.total_questoes} questões disponíveis</p>
-                </div>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center">
-                <Play className="w-5 h-5" />
-              </div>
-            </div>
-          </Link>
-        )}
       </main>
     </div>
   )
