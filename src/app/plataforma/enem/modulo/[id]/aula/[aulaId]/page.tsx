@@ -15,7 +15,8 @@ import {
   Clock,
   Play,
   Target,
-  Trophy
+  Trophy,
+  Star
 } from 'lucide-react'
 
 interface Aula {
@@ -39,16 +40,12 @@ interface Modulo {
   titulo: string
 }
 
-interface ContagemQuestoes {
-  facil: number
-  medio: number
-  dificil: number
-}
-
-interface ProgressoExercicios {
-  facil: { total: number; acertos: number; percentual: number }
-  medio: { total: number; acertos: number; percentual: number }
-  dificil: { total: number; acertos: number; percentual: number }
+interface ProgressoExercicio {
+  dificuldade: string
+  total_questoes: number
+  questoes_respondidas: number
+  acertos: number
+  percentual: number
 }
 
 export default function AulaPage() {
@@ -64,12 +61,8 @@ export default function AulaPage() {
   const [modulo, setModulo] = useState<Modulo | null>(null)
   const [tab, setTab] = useState<'teoria' | 'formulas' | 'dicas' | 'exercicios'>('teoria')
   const [concluida, setConcluida] = useState(false)
-  const [contagemQuestoes, setContagemQuestoes] = useState<ContagemQuestoes>({ facil: 0, medio: 0, dificil: 0 })
-  const [progressoExercicios, setProgressoExercicios] = useState<ProgressoExercicios>({
-    facil: { total: 0, acertos: 0, percentual: 0 },
-    medio: { total: 0, acertos: 0, percentual: 0 },
-    dificil: { total: 0, acertos: 0, percentual: 0 }
-  })
+  const [progressoExercicios, setProgressoExercicios] = useState<Record<string, ProgressoExercicio>>({})
+  const [questoesPorDificuldade, setQuestoesPorDificuldade] = useState<Record<string, number>>({})
 
   useEffect(() => {
     async function fetchData() {
@@ -114,61 +107,56 @@ export default function AulaPage() {
       }
 
       // Contar questões por dificuldade
-      const { data: questoesData } = await supabase
+      const { data: questoesCount } = await supabase
         .from('questoes')
-        .select('id, dificuldade')
+        .select('dificuldade')
         .eq('aula_id', aulaId)
         .eq('ativo', true)
 
-      if (questoesData) {
-        const contagem = { facil: 0, medio: 0, dificil: 0 }
-        questoesData.forEach(q => {
-          if (q.dificuldade === 'facil') contagem.facil++
-          else if (q.dificuldade === 'medio') contagem.medio++
-          else if (q.dificuldade === 'dificil') contagem.dificil++
-        })
-        setContagemQuestoes(contagem)
-
-        // Buscar progresso do usuário nos exercícios
-        const questaoIds = questoesData.map(q => q.id)
-        
-        if (questaoIds.length > 0) {
-          const { data: respostasData } = await supabase
-            .from('respostas_questoes')
-            .select('questao_id, correta')
-            .eq('user_id', user.id)
-            .in('questao_id', questaoIds)
-
-          if (respostasData) {
-            const progresso: ProgressoExercicios = {
-              facil: { total: 0, acertos: 0, percentual: 0 },
-              medio: { total: 0, acertos: 0, percentual: 0 },
-              dificil: { total: 0, acertos: 0, percentual: 0 }
-            }
-
-            respostasData.forEach(r => {
-              const questao = questoesData.find(q => q.id === r.questao_id)
-              if (questao) {
-                const dif = questao.dificuldade as 'facil' | 'medio' | 'dificil'
-                progresso[dif].total++
-                if (r.correta) progresso[dif].acertos++
-              }
-            })
-
-            // Calcular percentuais
-            if (progresso.facil.total > 0) {
-              progresso.facil.percentual = (progresso.facil.acertos / progresso.facil.total) * 100
-            }
-            if (progresso.medio.total > 0) {
-              progresso.medio.percentual = (progresso.medio.acertos / progresso.medio.total) * 100
-            }
-            if (progresso.dificil.total > 0) {
-              progresso.dificil.percentual = (progresso.dificil.acertos / progresso.dificil.total) * 100
-            }
-
-            setProgressoExercicios(progresso)
+      if (questoesCount) {
+        const contagem: Record<string, number> = { facil: 0, medio: 0, dificil: 0 }
+        questoesCount.forEach(q => {
+          if (q.dificuldade) {
+            contagem[q.dificuldade] = (contagem[q.dificuldade] || 0) + 1
           }
+        })
+        setQuestoesPorDificuldade(contagem)
+      }
+
+      // Buscar progresso do usuário nos exercícios desta aula
+      const { data: respostasData } = await supabase
+        .from('respostas_questoes')
+        .select(`
+          questao_id,
+          correta,
+          questoes!inner(dificuldade, aula_id)
+        `)
+        .eq('user_id', user.id)
+        .eq('questoes.aula_id', aulaId)
+
+      if (respostasData) {
+        const progresso: Record<string, ProgressoExercicio> = {
+          facil: { dificuldade: 'facil', total_questoes: 0, questoes_respondidas: 0, acertos: 0, percentual: 0 },
+          medio: { dificuldade: 'medio', total_questoes: 0, questoes_respondidas: 0, acertos: 0, percentual: 0 },
+          dificil: { dificuldade: 'dificil', total_questoes: 0, questoes_respondidas: 0, acertos: 0, percentual: 0 }
         }
+
+        respostasData.forEach((r: any) => {
+          const dif = r.questoes?.dificuldade
+          if (dif && progresso[dif]) {
+            progresso[dif].questoes_respondidas++
+            if (r.correta) progresso[dif].acertos++
+          }
+        })
+
+        // Calcular percentuais
+        Object.keys(progresso).forEach(dif => {
+          if (progresso[dif].questoes_respondidas > 0) {
+            progresso[dif].percentual = (progresso[dif].acertos / progresso[dif].questoes_respondidas) * 100
+          }
+        })
+
+        setProgressoExercicios(progresso)
       }
 
       setLoading(false)
@@ -195,6 +183,21 @@ export default function AulaPage() {
     if (!error) {
       setConcluida(true)
     }
+  }
+
+  // Verificar se nível está liberado
+  const isNivelLiberado = (dificuldade: string): boolean => {
+    if (dificuldade === 'facil') return true
+    
+    const nivelAnterior = dificuldade === 'medio' ? 'facil' : 'medio'
+    const progAnterior = progressoExercicios[nivelAnterior]
+    
+    // Libera se tiver respondido pelo menos 7 questões e acertado 70%
+    if (progAnterior && progAnterior.questoes_respondidas >= 7 && progAnterior.percentual >= 70) {
+      return true
+    }
+    
+    return false
   }
 
   if (loading) {
@@ -228,18 +231,35 @@ export default function AulaPage() {
 
   const cor = CORES_MODULOS[modulo?.numero || 1] || 'from-blue-500 to-blue-600'
 
-  // Verificar liberação dos níveis (70% para liberar próximo)
-  const PERCENTUAL_LIBERACAO = 70
-  const medioLiberado = progressoExercicios.facil.total >= contagemQuestoes.facil && 
-                        progressoExercicios.facil.percentual >= PERCENTUAL_LIBERACAO
-  const dificilLiberado = medioLiberado && 
-                          progressoExercicios.medio.total >= contagemQuestoes.medio && 
-                          progressoExercicios.medio.percentual >= PERCENTUAL_LIBERACAO
-
-  // Verificar se completou todos os exercícios
-  const todosCompletos = progressoExercicios.facil.total >= contagemQuestoes.facil &&
-                         progressoExercicios.medio.total >= contagemQuestoes.medio &&
-                         progressoExercicios.dificil.total >= contagemQuestoes.dificil
+  const blocos = [
+    { 
+      dificuldade: 'facil', 
+      titulo: 'Exercícios Fáceis', 
+      icone: '🟢',
+      cor: 'from-green-500 to-green-600',
+      corBg: 'bg-green-50',
+      corTexto: 'text-green-700',
+      corBorda: 'border-green-200'
+    },
+    { 
+      dificuldade: 'medio', 
+      titulo: 'Exercícios Médios', 
+      icone: '🟡',
+      cor: 'from-yellow-500 to-yellow-600',
+      corBg: 'bg-yellow-50',
+      corTexto: 'text-yellow-700',
+      corBorda: 'border-yellow-200'
+    },
+    { 
+      dificuldade: 'dificil', 
+      titulo: 'Exercícios Difíceis', 
+      icone: '🔴',
+      cor: 'from-red-500 to-red-600',
+      corBg: 'bg-red-50',
+      corTexto: 'text-red-700',
+      corBorda: 'border-red-200'
+    }
+  ]
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -307,7 +327,7 @@ export default function AulaPage() {
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
-              <FileText className="w-4 h-4 inline mr-2" />
+              <Target className="w-4 h-4 inline mr-2" />
               Exercícios
             </button>
           </div>
@@ -375,219 +395,121 @@ export default function AulaPage() {
 
           {tab === 'exercicios' && (
             <div>
-              <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <Target className="w-6 h-6 text-green-500" />
-                Pratique Exercícios
+              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                <Target className="w-6 h-6 text-blue-500" />
+                Pratique com Exercícios
               </h2>
+              
               <p className="text-gray-600 mb-6">
-                Complete cada nível com 70% de acertos para liberar o próximo!
+                Complete cada nível com pelo menos 70% de acertos para desbloquear o próximo!
               </p>
 
-              {/* 3 Blocos de Exercícios */}
               <div className="space-y-4">
-                
-                {/* Bloco FÁCIL - Sempre liberado */}
-                <Link
-                  href={`/plataforma/enem/modulo/${moduloId}/aula/${aulaId}/exercicios/facil`}
-                  className="block bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-200 rounded-xl p-5 hover:border-green-400 hover:shadow-md transition-all"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-14 h-14 bg-green-500 rounded-xl flex items-center justify-center">
-                        <span className="text-2xl">🟢</span>
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-green-800 text-lg">Nível Fácil</h3>
-                        <p className="text-green-600 text-sm">{contagemQuestoes.facil} questões</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      {progressoExercicios.facil.total > 0 ? (
-                        <div>
-                          <p className={`text-2xl font-bold ${progressoExercicios.facil.percentual >= 70 ? 'text-green-600' : 'text-orange-500'}`}>
-                            {progressoExercicios.facil.percentual.toFixed(0)}%
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {progressoExercicios.facil.acertos}/{progressoExercicios.facil.total} acertos
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
-                          <Play className="w-6 h-6 text-white" />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  {progressoExercicios.facil.total > 0 && (
-                    <div className="mt-3">
-                      <div className="h-2 bg-green-100 rounded-full overflow-hidden">
-                        <div 
-                          className={`h-full rounded-full transition-all ${progressoExercicios.facil.percentual >= 70 ? 'bg-green-500' : 'bg-orange-400'}`}
-                          style={{ width: `${progressoExercicios.facil.percentual}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </Link>
+                {blocos.map((bloco, index) => {
+                  const liberado = isNivelLiberado(bloco.dificuldade)
+                  const progresso = progressoExercicios[bloco.dificuldade]
+                  const totalQuestoes = questoesPorDificuldade[bloco.dificuldade] || 0
+                  const respondidas = progresso?.questoes_respondidas || 0
+                  const acertos = progresso?.acertos || 0
+                  const percentual = progresso?.percentual || 0
+                  const completou = respondidas >= 7 && percentual >= 70
 
-                {/* Bloco MÉDIO */}
-                {medioLiberado ? (
-                  <Link
-                    href={`/plataforma/enem/modulo/${moduloId}/aula/${aulaId}/exercicios/medio`}
-                    className="block bg-gradient-to-r from-yellow-50 to-amber-50 border-2 border-yellow-200 rounded-xl p-5 hover:border-yellow-400 hover:shadow-md transition-all"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 bg-yellow-500 rounded-xl flex items-center justify-center">
-                          <span className="text-2xl">🟡</span>
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-yellow-800 text-lg">Nível Médio</h3>
-                          <p className="text-yellow-600 text-sm">{contagemQuestoes.medio} questões</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        {progressoExercicios.medio.total > 0 ? (
-                          <div>
-                            <p className={`text-2xl font-bold ${progressoExercicios.medio.percentual >= 70 ? 'text-green-600' : 'text-orange-500'}`}>
-                              {progressoExercicios.medio.percentual.toFixed(0)}%
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              {progressoExercicios.medio.acertos}/{progressoExercicios.medio.total} acertos
-                            </p>
+                  return (
+                    <div
+                      key={bloco.dificuldade}
+                      className={`rounded-xl border-2 overflow-hidden transition-all ${
+                        liberado 
+                          ? `${bloco.corBorda} ${bloco.corBg}` 
+                          : 'border-gray-200 bg-gray-50 opacity-75'
+                      }`}
+                    >
+                      <div className="p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            <span className="text-2xl">{bloco.icone}</span>
+                            <div>
+                              <h3 className={`font-bold ${liberado ? bloco.corTexto : 'text-gray-400'}`}>
+                                {bloco.titulo}
+                              </h3>
+                              <p className={`text-sm ${liberado ? 'text-gray-600' : 'text-gray-400'}`}>
+                                {totalQuestoes} questões disponíveis
+                              </p>
+                            </div>
                           </div>
+                          
+                          {liberado ? (
+                            completou ? (
+                              <div className="flex items-center gap-2 bg-green-100 text-green-700 px-3 py-1 rounded-full">
+                                <Trophy className="w-4 h-4" />
+                                <span className="text-sm font-medium">{percentual.toFixed(0)}%</span>
+                              </div>
+                            ) : respondidas > 0 ? (
+                              <div className="text-right">
+                                <p className={`text-sm font-medium ${bloco.corTexto}`}>
+                                  {acertos}/{respondidas} acertos
+                                </p>
+                                <p className="text-xs text-gray-500">{percentual.toFixed(0)}%</p>
+                              </div>
+                            ) : null
+                          ) : (
+                            <div className="flex items-center gap-2 text-gray-400">
+                              <Lock className="w-5 h-5" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Barra de progresso */}
+                        {liberado && respondidas > 0 && (
+                          <div className="mb-3">
+                            <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                              <div 
+                                className={`h-full bg-gradient-to-r ${bloco.cor} transition-all duration-500`}
+                                style={{ width: `${Math.min(percentual, 100)}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Botão ou mensagem de bloqueio */}
+                        {liberado ? (
+                          <Link
+                            href={`/plataforma/enem/modulo/${moduloId}/aula/${aulaId}/exercicios/${bloco.dificuldade}`}
+                            className={`w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r ${bloco.cor} text-white font-semibold rounded-lg hover:opacity-90 transition-all`}
+                          >
+                            <Play className="w-5 h-5" />
+                            {respondidas > 0 ? 'Continuar' : 'Começar'}
+                          </Link>
                         ) : (
-                          <div className="w-12 h-12 bg-yellow-500 rounded-full flex items-center justify-center">
-                            <Play className="w-6 h-6 text-white" />
+                          <div className="w-full py-3 bg-gray-200 text-gray-500 font-medium rounded-lg text-center">
+                            <Lock className="w-4 h-4 inline mr-2" />
+                            Complete o nível anterior com 70%
                           </div>
                         )}
                       </div>
                     </div>
-                    {progressoExercicios.medio.total > 0 && (
-                      <div className="mt-3">
-                        <div className="h-2 bg-yellow-100 rounded-full overflow-hidden">
-                          <div 
-                            className={`h-full rounded-full transition-all ${progressoExercicios.medio.percentual >= 70 ? 'bg-green-500' : 'bg-orange-400'}`}
-                            style={{ width: `${progressoExercicios.medio.percentual}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </Link>
-                ) : (
-                  <div className="bg-gray-100 border-2 border-dashed border-gray-300 rounded-xl p-5 opacity-60">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 bg-gray-300 rounded-xl flex items-center justify-center">
-                          <Lock className="w-7 h-7 text-gray-500" />
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-gray-500 text-lg">Nível Médio</h3>
-                          <p className="text-gray-400 text-sm">Complete 70% do Fácil para liberar</p>
-                        </div>
-                      </div>
-                      <div className="text-gray-400">
-                        🔒
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Bloco DIFÍCIL */}
-                {dificilLiberado ? (
-                  <Link
-                    href={`/plataforma/enem/modulo/${moduloId}/aula/${aulaId}/exercicios/dificil`}
-                    className="block bg-gradient-to-r from-red-50 to-rose-50 border-2 border-red-200 rounded-xl p-5 hover:border-red-400 hover:shadow-md transition-all"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 bg-red-500 rounded-xl flex items-center justify-center">
-                          <span className="text-2xl">🔴</span>
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-red-800 text-lg">Nível Difícil</h3>
-                          <p className="text-red-600 text-sm">{contagemQuestoes.dificil} questões</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        {progressoExercicios.dificil.total > 0 ? (
-                          <div>
-                            <p className={`text-2xl font-bold ${progressoExercicios.dificil.percentual >= 70 ? 'text-green-600' : 'text-orange-500'}`}>
-                              {progressoExercicios.dificil.percentual.toFixed(0)}%
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              {progressoExercicios.dificil.acertos}/{progressoExercicios.dificil.total} acertos
-                            </p>
-                          </div>
-                        ) : (
-                          <div className="w-12 h-12 bg-red-500 rounded-full flex items-center justify-center">
-                            <Play className="w-6 h-6 text-white" />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    {progressoExercicios.dificil.total > 0 && (
-                      <div className="mt-3">
-                        <div className="h-2 bg-red-100 rounded-full overflow-hidden">
-                          <div 
-                            className={`h-full rounded-full transition-all ${progressoExercicios.dificil.percentual >= 70 ? 'bg-green-500' : 'bg-orange-400'}`}
-                            style={{ width: `${progressoExercicios.dificil.percentual}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </Link>
-                ) : (
-                  <div className="bg-gray-100 border-2 border-dashed border-gray-300 rounded-xl p-5 opacity-60">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 bg-gray-300 rounded-xl flex items-center justify-center">
-                          <Lock className="w-7 h-7 text-gray-500" />
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-gray-500 text-lg">Nível Difícil</h3>
-                          <p className="text-gray-400 text-sm">Complete 70% do Médio para liberar</p>
-                        </div>
-                      </div>
-                      <div className="text-gray-400">
-                        🔒
-                      </div>
-                    </div>
-                  </div>
-                )}
-
+                  )
+                })}
               </div>
-
-              {/* Conquista ao completar tudo */}
-              {todosCompletos && (
-                <div className="mt-6 bg-gradient-to-r from-purple-500 to-indigo-600 rounded-xl p-6 text-white text-center">
-                  <Trophy className="w-12 h-12 mx-auto mb-2" />
-                  <h3 className="text-xl font-bold">🎉 Parabéns!</h3>
-                  <p className="text-purple-100">Você completou todos os exercícios desta aula!</p>
-                </div>
-              )}
             </div>
           )}
         </div>
 
-        {/* Botão Concluir - só aparece se não estiver na aba de exercícios */}
+        {/* Botão Concluir - só mostra se não estiver na aba exercícios */}
         {tab !== 'exercicios' && (
-          <>
-            {!concluida ? (
-              <button
-                onClick={marcarConcluida}
-                className={`w-full py-4 bg-gradient-to-r ${cor} text-white font-bold rounded-xl hover:opacity-90 transition-all flex items-center justify-center gap-2`}
-              >
-                <CheckCircle className="w-5 h-5" />
-                Marcar aula como concluída
-              </button>
-            ) : (
-              <div className="w-full py-4 bg-green-100 text-green-700 font-bold rounded-xl flex items-center justify-center gap-2">
-                <CheckCircle className="w-5 h-5" />
-                ✅ Aula concluída!
-              </div>
-            )}
-          </>
+          !concluida ? (
+            <button
+              onClick={marcarConcluida}
+              className={`w-full py-4 bg-gradient-to-r ${cor} text-white font-bold rounded-xl hover:opacity-90 transition-all flex items-center justify-center gap-2`}
+            >
+              <CheckCircle className="w-5 h-5" />
+              Marcar aula como concluída
+            </button>
+          ) : (
+            <div className="w-full py-4 bg-green-100 text-green-700 font-bold rounded-xl flex items-center justify-center gap-2">
+              <CheckCircle className="w-5 h-5" />
+              ✅ Aula concluída!
+            </div>
+          )
         )}
 
         {/* Navegação */}
