@@ -12,12 +12,8 @@ interface Modulo {
   descricao: string
   icone: string
   total_fases: number
-}
-
-interface Fase {
-  id: string
-  modulo_id: string
-  total_questoes: number
+  total_aulas_real: number      // Novo campo da VIEW
+  total_questoes_real: number   // Novo campo da VIEW
 }
 
 const ICONES_MODULOS: Record<number, string> = {
@@ -48,15 +44,14 @@ const CORES_MODULOS: Record<number, string> = {
 
 export default function PlataformaEnem() {
   const [modulos, setModulos] = useState<Modulo[]>([])
-  const [fases, setFases] = useState<Record<string, Fase>>({})
   const [loading, setLoading] = useState(true)
   const supabase = createClientComponentClient()
 
   useEffect(() => {
     async function fetchData() {
-      // Buscar módulos do ENEM
+      // Buscar módulos da VIEW com contagem real
       const { data: modulosData, error: modulosError } = await supabase
-        .from('modulos')
+        .from('modulos_com_contagem')  // <-- Mudança: usar VIEW em vez de tabela
         .select('*')
         .eq('plataforma', 'enem')
         .eq('ativo', true)
@@ -68,24 +63,6 @@ export default function PlataformaEnem() {
       }
 
       setModulos(modulosData || [])
-
-      // Buscar fases para contar questões
-      if (modulosData && modulosData.length > 0) {
-        const moduloIds = modulosData.map(m => m.id)
-        const { data: fasesData } = await supabase
-          .from('fases')
-          .select('*')
-          .in('modulo_id', moduloIds)
-
-        if (fasesData) {
-          const fasesMap: Record<string, Fase> = {}
-          fasesData.forEach(f => {
-            fasesMap[f.modulo_id] = f
-          })
-          setFases(fasesMap)
-        }
-      }
-
       setLoading(false)
     }
 
@@ -100,7 +77,9 @@ export default function PlataformaEnem() {
     )
   }
 
-  const totalQuestoes = Object.values(fases).reduce((acc, f) => acc + (f.total_questoes || 0), 0)
+  // Calcular total de questões usando o campo real da VIEW
+  const totalQuestoes = modulos.reduce((acc, m) => acc + (m.total_questoes_real || 0), 0)
+  const totalAulas = modulos.reduce((acc, m) => acc + (m.total_aulas_real || 0), 0)
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -131,10 +110,14 @@ export default function PlataformaEnem() {
               <p className="text-blue-100">Domine os 10 módulos e conquiste sua vaga!</p>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-4 mt-6">
+          <div className="grid grid-cols-4 gap-4 mt-6">
             <div className="bg-white/10 rounded-xl p-4 text-center">
               <p className="text-3xl font-bold">{modulos.length}</p>
               <p className="text-sm text-blue-100">Módulos</p>
+            </div>
+            <div className="bg-white/10 rounded-xl p-4 text-center">
+              <p className="text-3xl font-bold">{totalAulas}</p>
+              <p className="text-sm text-blue-100">Aulas</p>
             </div>
             <div className="bg-white/10 rounded-xl p-4 text-center">
               <p className="text-3xl font-bold">{totalQuestoes.toLocaleString()}</p>
@@ -182,8 +165,8 @@ export default function PlataformaEnem() {
 
         <div className="grid md:grid-cols-2 gap-4">
           {modulos.map((modulo) => {
-            const fase = fases[modulo.id]
-            const questoes = fase?.total_questoes || 0
+            const questoes = modulo.total_questoes_real || 0  // <-- Usando campo real
+            const aulas = modulo.total_aulas_real || 0        // <-- Usando campo real
             const icone = ICONES_MODULOS[modulo.numero] || '📚'
             const cor = CORES_MODULOS[modulo.numero] || 'from-gray-500 to-gray-600'
 
@@ -205,9 +188,14 @@ export default function PlataformaEnem() {
                       <span className="text-xs font-semibold text-gray-400 uppercase">
                         Módulo {modulo.numero}
                       </span>
-                      <span className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded-full">
-                        {questoes} questões
-                      </span>
+                      <div className="flex gap-2">
+                        <span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded-full">
+                          {aulas} aulas
+                        </span>
+                        <span className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded-full">
+                          {questoes} questões
+                        </span>
+                      </div>
                     </div>
                     <h3 className="font-bold text-gray-800 group-hover:text-blue-600 transition-colors">
                       {modulo.titulo}
