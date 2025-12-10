@@ -147,6 +147,33 @@ export default function PlataformaEnem() {
           </div>
         </div>
 
+        {/* Card Simulados ENEM */}
+        <Link 
+          href="/plataforma/enem/simulados"
+          className="block bg-gradient-to-r from-orange-500 to-red-500 rounded-2xl p-6 mb-8 text-white hover:from-orange-600 hover:to-red-600 transition-all shadow-lg hover:shadow-xl"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center text-3xl">
+                🎯
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold">Simulados ENEM</h2>
+                <p className="text-orange-100">6 simulados completos com correção TRI</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="text-right hidden sm:block">
+                <p className="text-2xl font-bold">275</p>
+                <p className="text-sm text-orange-100">questões</p>
+              </div>
+              <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
+                <Play className="w-6 h-6" />
+              </div>
+            </div>
+          </div>
+        </Link>
+
         {/* Módulos */}
         <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
           <BookOpen className="w-6 h-6" />
