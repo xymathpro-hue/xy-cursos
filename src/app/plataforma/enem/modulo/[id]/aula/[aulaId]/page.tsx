@@ -6,34 +6,31 @@ import Link from 'next/link'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { 
   ArrowLeft, 
+  BookOpen, 
+  Lock, 
   CheckCircle, 
-  XCircle,
-  ChevronRight,
-  ChevronLeft,
+  Lightbulb, 
+  Calculator, 
+  FileText, 
+  Clock,
+  Play,
   Target,
-  Trophy,
-  RotateCcw,
-  Home
+  Trophy
 } from 'lucide-react'
-
-interface Questao {
-  id: string
-  numero: number
-  enunciado: string
-  alternativa_a: string
-  alternativa_b: string
-  alternativa_c: string
-  alternativa_d: string
-  alternativa_e: string
-  resposta_correta: string
-  explicacao: string
-  dificuldade: string
-}
 
 interface Aula {
   id: string
   numero: number
   titulo: string
+  descricao: string
+  conteudo_teoria: string
+  formulas: string
+  dicas: string
+  exercicios_resolvidos: string
+  imagem_url: string
+  imagem_descricao: string
+  duracao_minutos: number
+  ordem: number
 }
 
 interface Modulo {
@@ -42,33 +39,37 @@ interface Modulo {
   titulo: string
 }
 
-export default function ExerciciosDificuldadePage() {
+interface ContagemQuestoes {
+  facil: number
+  medio: number
+  dificil: number
+}
+
+interface ProgressoExercicios {
+  facil: { total: number; acertos: number; percentual: number }
+  medio: { total: number; acertos: number; percentual: number }
+  dificil: { total: number; acertos: number; percentual: number }
+}
+
+export default function AulaPage() {
   const params = useParams()
   const router = useRouter()
   const supabase = createClientComponentClient()
 
   const moduloId = params.id as string
   const aulaId = params.aulaId as string
-  const dificuldade = params.dificuldade as string
 
   const [loading, setLoading] = useState(true)
   const [aula, setAula] = useState<Aula | null>(null)
   const [modulo, setModulo] = useState<Modulo | null>(null)
-  const [questoes, setQuestoes] = useState<Questao[]>([])
-  const [questaoAtual, setQuestaoAtual] = useState(0)
-  const [respostaSelecionada, setRespostaSelecionada] = useState<string | null>(null)
-  const [respostaConfirmada, setRespostaConfirmada] = useState(false)
-  const [respostas, setRespostas] = useState<Record<number, { resposta: string; correta: boolean }>>({})
-  const [modoResultado, setModoResultado] = useState(false)
-  const [userId, setUserId] = useState<string | null>(null)
-
-  const CORES_DIFICULDADE: Record<string, { cor: string; titulo: string; icone: string }> = {
-    facil: { cor: 'from-green-500 to-green-600', titulo: 'Exercícios Fáceis', icone: '🟢' },
-    medio: { cor: 'from-yellow-500 to-yellow-600', titulo: 'Exercícios Médios', icone: '🟡' },
-    dificil: { cor: 'from-red-500 to-red-600', titulo: 'Exercícios Difíceis', icone: '🔴' }
-  }
-
-  const config = CORES_DIFICULDADE[dificuldade] || CORES_DIFICULDADE['facil']
+  const [tab, setTab] = useState<'teoria' | 'formulas' | 'dicas' | 'exercicios'>('teoria')
+  const [concluida, setConcluida] = useState(false)
+  const [contagemQuestoes, setContagemQuestoes] = useState<ContagemQuestoes>({ facil: 0, medio: 0, dificil: 0 })
+  const [progressoExercicios, setProgressoExercicios] = useState<ProgressoExercicios>({
+    facil: { total: 0, acertos: 0, percentual: 0 },
+    medio: { total: 0, acertos: 0, percentual: 0 },
+    dificil: { total: 0, acertos: 0, percentual: 0 }
+  })
 
   useEffect(() => {
     async function fetchData() {
@@ -77,7 +78,6 @@ export default function ExerciciosDificuldadePage() {
         router.push('/login')
         return
       }
-      setUserId(user.id)
 
       // Buscar módulo
       const { data: moduloData } = await supabase
@@ -86,7 +86,9 @@ export default function ExerciciosDificuldadePage() {
         .eq('id', moduloId)
         .single()
 
-      if (moduloData) setModulo(moduloData)
+      if (moduloData) {
+        setModulo(moduloData)
+      }
 
       // Buscar aula
       const { data: aulaData } = await supabase
@@ -95,40 +97,77 @@ export default function ExerciciosDificuldadePage() {
         .eq('id', aulaId)
         .single()
 
-      if (aulaData) setAula(aulaData)
-
-      // Buscar questões da aula com a dificuldade específica
-      const { data: questoesData } = await supabase
-        .from('questoes')
-        .select('*')
-        .eq('aula_id', aulaId)
-        .eq('dificuldade', dificuldade)
-        .eq('ativo', true)
-        .order('numero', { ascending: true })
-        .limit(10)
-
-      if (questoesData) {
-        setQuestoes(questoesData)
+      if (aulaData) {
+        setAula(aulaData)
       }
 
-      // Buscar respostas anteriores do usuário
-      if (questoesData && questoesData.length > 0) {
-        const questaoIds = questoesData.map(q => q.id)
-        const { data: respostasData } = await supabase
-          .from('respostas_questoes')
-          .select('questao_id, resposta, correta')
-          .eq('user_id', user.id)
-          .in('questao_id', questaoIds)
+      // Verificar se já concluiu
+      const { data: progressoData } = await supabase
+        .from('progresso_aulas')
+        .select('concluida')
+        .eq('user_id', user.id)
+        .eq('aula_id', aulaId)
+        .single()
 
-        if (respostasData) {
-          const respostasMap: Record<number, { resposta: string; correta: boolean }> = {}
-          respostasData.forEach((r: any) => {
-            const index = questoesData.findIndex(q => q.id === r.questao_id)
-            if (index !== -1) {
-              respostasMap[index] = { resposta: r.resposta, correta: r.correta }
+      if (progressoData) {
+        setConcluida(progressoData.concluida)
+      }
+
+      // Contar questões por dificuldade
+      const { data: questoesData } = await supabase
+        .from('questoes')
+        .select('id, dificuldade')
+        .eq('aula_id', aulaId)
+        .eq('ativo', true)
+
+      if (questoesData) {
+        const contagem = { facil: 0, medio: 0, dificil: 0 }
+        questoesData.forEach(q => {
+          if (q.dificuldade === 'facil') contagem.facil++
+          else if (q.dificuldade === 'medio') contagem.medio++
+          else if (q.dificuldade === 'dificil') contagem.dificil++
+        })
+        setContagemQuestoes(contagem)
+
+        // Buscar progresso do usuário nos exercícios
+        const questaoIds = questoesData.map(q => q.id)
+        
+        if (questaoIds.length > 0) {
+          const { data: respostasData } = await supabase
+            .from('respostas_questoes')
+            .select('questao_id, correta')
+            .eq('user_id', user.id)
+            .in('questao_id', questaoIds)
+
+          if (respostasData) {
+            const progresso: ProgressoExercicios = {
+              facil: { total: 0, acertos: 0, percentual: 0 },
+              medio: { total: 0, acertos: 0, percentual: 0 },
+              dificil: { total: 0, acertos: 0, percentual: 0 }
             }
-          })
-          setRespostas(respostasMap)
+
+            respostasData.forEach(r => {
+              const questao = questoesData.find(q => q.id === r.questao_id)
+              if (questao) {
+                const dif = questao.dificuldade as 'facil' | 'medio' | 'dificil'
+                progresso[dif].total++
+                if (r.correta) progresso[dif].acertos++
+              }
+            })
+
+            // Calcular percentuais
+            if (progresso.facil.total > 0) {
+              progresso.facil.percentual = (progresso.facil.acertos / progresso.facil.total) * 100
+            }
+            if (progresso.medio.total > 0) {
+              progresso.medio.percentual = (progresso.medio.acertos / progresso.medio.total) * 100
+            }
+            if (progresso.dificil.total > 0) {
+              progresso.dificil.percentual = (progresso.dificil.acertos / progresso.dificil.total) * 100
+            }
+
+            setProgressoExercicios(progresso)
+          }
         }
       }
 
@@ -136,424 +175,430 @@ export default function ExerciciosDificuldadePage() {
     }
 
     fetchData()
-  }, [supabase, router, moduloId, aulaId, dificuldade])
+  }, [supabase, router, aulaId, moduloId])
 
-  const salvarResposta = async (questaoId: string, resposta: string, correta: boolean) => {
-    if (!userId) return
+  const marcarConcluida = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
 
-    await supabase
-      .from('respostas_questoes')
+    const { error } = await supabase
+      .from('progresso_aulas')
       .upsert({
-        user_id: userId,
-        questao_id: questaoId,
-        resposta: resposta,
-        correta: correta,
-        respondida_em: new Date().toISOString()
+        user_id: user.id,
+        aula_id: aulaId,
+        concluida: true,
+        concluida_em: new Date().toISOString()
       }, {
-        onConflict: 'user_id,questao_id'
+        onConflict: 'user_id,aula_id'
       })
-  }
 
-  const handleSelecionarResposta = (alternativa: string) => {
-    if (!respostaConfirmada) {
-      setRespostaSelecionada(alternativa)
+    if (!error) {
+      setConcluida(true)
     }
-  }
-
-  const handleConfirmarResposta = async () => {
-    if (!respostaSelecionada) return
-
-    const questao = questoes[questaoAtual]
-    const correta = respostaSelecionada === questao.resposta_correta
-
-    setRespostas({
-      ...respostas,
-      [questaoAtual]: { resposta: respostaSelecionada, correta }
-    })
-    setRespostaConfirmada(true)
-
-    // Salvar no banco
-    await salvarResposta(questao.id, respostaSelecionada, correta)
-  }
-
-  const handleProximaQuestao = () => {
-    if (questaoAtual < questoes.length - 1) {
-      setQuestaoAtual(questaoAtual + 1)
-      const proximaResposta = respostas[questaoAtual + 1]
-      if (proximaResposta) {
-        setRespostaSelecionada(proximaResposta.resposta)
-        setRespostaConfirmada(true)
-      } else {
-        setRespostaSelecionada(null)
-        setRespostaConfirmada(false)
-      }
-    } else {
-      setModoResultado(true)
-    }
-  }
-
-  const handleQuestaoAnterior = () => {
-    if (questaoAtual > 0) {
-      setQuestaoAtual(questaoAtual - 1)
-      const respostaAnterior = respostas[questaoAtual - 1]
-      if (respostaAnterior) {
-        setRespostaSelecionada(respostaAnterior.resposta)
-        setRespostaConfirmada(true)
-      } else {
-        setRespostaSelecionada(null)
-        setRespostaConfirmada(false)
-      }
-    }
-  }
-
-  const handleReiniciar = () => {
-    setQuestaoAtual(0)
-    setRespostaSelecionada(null)
-    setRespostaConfirmada(false)
-    setRespostas({})
-    setModoResultado(false)
-  }
-
-  const irParaQuestao = (index: number) => {
-    setQuestaoAtual(index)
-    const resposta = respostas[index]
-    if (resposta) {
-      setRespostaSelecionada(resposta.resposta)
-      setRespostaConfirmada(true)
-    } else {
-      setRespostaSelecionada(null)
-      setRespostaConfirmada(false)
-    }
-    setModoResultado(false)
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
       </div>
     )
   }
 
-  if (!aula || questoes.length === 0) {
+  if (!aula) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-        <div className="text-center bg-white p-8 rounded-2xl shadow-lg">
-          <p className="text-gray-600 mb-4">Nenhuma questão disponível neste nível.</p>
-          <Link 
-            href={`/plataforma/enem/modulo/${moduloId}/aula/${aulaId}`}
-            className="text-blue-600 hover:underline"
-          >
-            Voltar para a aula
-          </Link>
-        </div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p>Aula não encontrada.</p>
       </div>
     )
   }
 
-  // Calcular resultados
-  const totalRespondidas = Object.keys(respostas).length
-  const acertos = Object.values(respostas).filter(r => r.correta).length
-  const percentualAcertos = totalRespondidas > 0 ? (acertos / totalRespondidas) * 100 : 0
-  const aprovado = totalRespondidas >= 7 && percentualAcertos >= 70
-
-  // Modo Resultado
-  if (modoResultado) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-        <header className="bg-white shadow-sm sticky top-0 z-10">
-          <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-            <Link 
-              href={`/plataforma/enem/modulo/${moduloId}/aula/${aulaId}`}
-              className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
-            >
-              <ArrowLeft className="w-5 h-5" />
-              <span>Voltar</span>
-            </Link>
-            <span className="font-bold text-gray-800">Resultado</span>
-            <div className="w-20"></div>
-          </div>
-        </header>
-
-        <main className="max-w-4xl mx-auto px-4 py-8">
-          <div className="bg-white rounded-2xl shadow-lg p-8 text-center">
-            <div className={`w-20 h-20 mx-auto mb-4 rounded-full bg-gradient-to-r ${config.cor} flex items-center justify-center`}>
-              <Trophy className="w-10 h-10 text-white" />
-            </div>
-            
-            <h1 className="text-2xl font-bold text-gray-800 mb-2">
-              {aprovado ? '🎉 Parabéns!' : 'Continue Praticando!'}
-            </h1>
-            <p className="text-gray-600 mb-2">{config.icone} {config.titulo}</p>
-            <p className="text-gray-500 mb-6">{aula.titulo}</p>
-
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              <div className="bg-blue-50 rounded-xl p-4">
-                <p className="text-3xl font-bold text-blue-600">{totalRespondidas}</p>
-                <p className="text-sm text-gray-600">Respondidas</p>
-              </div>
-              <div className="bg-green-50 rounded-xl p-4">
-                <p className="text-3xl font-bold text-green-600">{acertos}</p>
-                <p className="text-sm text-gray-600">Acertos</p>
-              </div>
-              <div className={`rounded-xl p-4 ${aprovado ? 'bg-green-50' : 'bg-yellow-50'}`}>
-                <p className={`text-3xl font-bold ${aprovado ? 'text-green-600' : 'text-yellow-600'}`}>
-                  {percentualAcertos.toFixed(0)}%
-                </p>
-                <p className="text-sm text-gray-600">Aproveitamento</p>
-              </div>
-            </div>
-
-            {aprovado ? (
-              <div className="bg-green-100 text-green-700 p-4 rounded-xl mb-6">
-                <CheckCircle className="w-6 h-6 inline mr-2" />
-                Nível concluído! Próximo nível desbloqueado!
-              </div>
-            ) : (
-              <div className="bg-yellow-100 text-yellow-700 p-4 rounded-xl mb-6">
-                Você precisa de 70% de acertos em pelo menos 7 questões para desbloquear o próximo nível.
-              </div>
-            )}
-
-            {/* Lista de questões para revisão */}
-            <div className="mb-8">
-              <h3 className="font-semibold text-gray-700 mb-4">Revise suas respostas:</h3>
-              <div className="flex flex-wrap gap-2 justify-center">
-                {questoes.map((_, index) => {
-                  const resposta = respostas[index]
-                  return (
-                    <button
-                      key={index}
-                      onClick={() => irParaQuestao(index)}
-                      className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-medium transition-all ${
-                        resposta
-                          ? resposta.correta
-                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                            : 'bg-red-100 text-red-700 hover:bg-red-200'
-                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                      }`}
-                    >
-                      {index + 1}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div className="flex gap-4 justify-center">
-              <button
-                onClick={handleReiniciar}
-                className="flex items-center gap-2 px-6 py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors"
-              >
-                <RotateCcw className="w-5 h-5" />
-                Refazer
-              </button>
-              <Link
-                href={`/plataforma/enem/modulo/${moduloId}/aula/${aulaId}`}
-                className={`flex items-center gap-2 px-6 py-3 bg-gradient-to-r ${config.cor} text-white rounded-xl hover:opacity-90 transition-colors`}
-              >
-                <Home className="w-5 h-5" />
-                Voltar à Aula
-              </Link>
-            </div>
-          </div>
-        </main>
-      </div>
-    )
+  const CORES_MODULOS: Record<number, string> = {
+    1: 'from-blue-500 to-blue-600',
+    2: 'from-purple-500 to-purple-600',
+    3: 'from-pink-500 to-pink-600',
+    4: 'from-green-500 to-green-600',
+    5: 'from-orange-500 to-orange-600',
+    6: 'from-teal-500 to-teal-600',
+    7: 'from-yellow-500 to-yellow-600',
+    8: 'from-red-500 to-red-600',
+    9: 'from-indigo-500 to-indigo-600',
+    10: 'from-cyan-500 to-cyan-600',
   }
 
-  // Questão atual
-  const questao = questoes[questaoAtual]
-  const alternativas = [
-    { letra: 'A', texto: questao.alternativa_a },
-    { letra: 'B', texto: questao.alternativa_b },
-    { letra: 'C', texto: questao.alternativa_c },
-    { letra: 'D', texto: questao.alternativa_d },
-    { letra: 'E', texto: questao.alternativa_e },
-  ].filter(alt => alt.texto)
+  const cor = CORES_MODULOS[modulo?.numero || 1] || 'from-blue-500 to-blue-600'
+
+  // Verificar liberação dos níveis (70% para liberar próximo)
+  const PERCENTUAL_LIBERACAO = 70
+  const medioLiberado = progressoExercicios.facil.total >= contagemQuestoes.facil && 
+                        progressoExercicios.facil.percentual >= PERCENTUAL_LIBERACAO
+  const dificilLiberado = medioLiberado && 
+                          progressoExercicios.medio.total >= contagemQuestoes.medio && 
+                          progressoExercicios.medio.percentual >= PERCENTUAL_LIBERACAO
+
+  // Verificar se completou todos os exercícios
+  const todosCompletos = progressoExercicios.facil.total >= contagemQuestoes.facil &&
+                         progressoExercicios.medio.total >= contagemQuestoes.medio &&
+                         progressoExercicios.dificil.total >= contagemQuestoes.dificil
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <Link 
-            href={`/plataforma/enem/modulo/${moduloId}/aula/${aulaId}`}
-            className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            <span>Voltar</span>
-          </Link>
-          <div className="flex items-center gap-2">
-            <span className="text-xl">{config.icone}</span>
-            <span className="font-bold text-gray-800">
-              Questão {questaoAtual + 1} de {questoes.length}
-            </span>
+      <header className={`bg-gradient-to-r ${cor} text-white sticky top-0 z-10`}>
+        <div className="max-w-4xl mx-auto px-4 py-4">
+          <div className="flex items-center gap-3">
+            <Link href={`/plataforma/enem/modulo/${moduloId}`} className="p-2 hover:bg-white/20 rounded-lg transition-colors">
+              <ArrowLeft className="w-5 h-5" />
+            </Link>
+            <div className="flex-1">
+              <p className="text-sm text-white/80">Módulo {modulo?.numero} • Aula {aula.numero}</p>
+              <h1 className="text-lg font-bold">{aula.titulo}</h1>
+            </div>
+            <div className="flex items-center gap-2 text-white/80">
+              <Clock className="w-4 h-4" />
+              <span className="text-sm">{aula.duracao_minutos} min</span>
+            </div>
           </div>
-          <div className="text-sm text-gray-500">
-            {acertos}/{totalRespondidas} ✓
-          </div>
-        </div>
-        
-        {/* Barra de progresso */}
-        <div className="h-1 bg-gray-100">
-          <div 
-            className={`h-full bg-gradient-to-r ${config.cor} transition-all duration-300`}
-            style={{ width: `${((questaoAtual + 1) / questoes.length) * 100}%` }}
-          />
         </div>
       </header>
 
+      {/* Tabs */}
+      <div className="bg-white border-b border-gray-200 sticky top-16 z-10">
+        <div className="max-w-4xl mx-auto px-4">
+          <div className="flex gap-1 overflow-x-auto">
+            <button
+              onClick={() => setTab('teoria')}
+              className={`py-3 px-4 font-medium border-b-2 transition-all whitespace-nowrap ${
+                tab === 'teoria'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <BookOpen className="w-4 h-4 inline mr-2" />
+              Teoria
+            </button>
+            <button
+              onClick={() => setTab('formulas')}
+              className={`py-3 px-4 font-medium border-b-2 transition-all whitespace-nowrap ${
+                tab === 'formulas'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Calculator className="w-4 h-4 inline mr-2" />
+              Fórmulas
+            </button>
+            <button
+              onClick={() => setTab('dicas')}
+              className={`py-3 px-4 font-medium border-b-2 transition-all whitespace-nowrap ${
+                tab === 'dicas'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Lightbulb className="w-4 h-4 inline mr-2" />
+              Dicas
+            </button>
+            <button
+              onClick={() => setTab('exercicios')}
+              className={`py-3 px-4 font-medium border-b-2 transition-all whitespace-nowrap ${
+                tab === 'exercicios'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <FileText className="w-4 h-4 inline mr-2" />
+              Exercícios
+            </button>
+          </div>
+        </div>
+      </div>
+
       <main className="max-w-4xl mx-auto px-4 py-6">
-        {/* Card da Questão */}
-        <div className="bg-white rounded-2xl shadow-lg overflow-hidden mb-4">
-          {/* Header da questão */}
-          <div className={`bg-gradient-to-r ${config.cor} px-6 py-3 text-white`}>
-            <div className="flex items-center justify-between">
-              <span className="font-medium">{aula.titulo}</span>
-              <span className="text-sm opacity-80">{config.titulo}</span>
-            </div>
+        {/* Imagem da aula */}
+        {aula.imagem_url && tab === 'teoria' && (
+          <div className="mb-6 bg-white rounded-xl p-4 border border-gray-100">
+            <img 
+              src={aula.imagem_url} 
+              alt={aula.imagem_descricao || aula.titulo}
+              className="max-w-full h-auto mx-auto rounded-lg max-h-64 object-contain"
+            />
+            {aula.imagem_descricao && (
+              <p className="text-sm text-gray-500 text-center mt-2">{aula.imagem_descricao}</p>
+            )}
           </div>
+        )}
 
-          {/* Enunciado */}
-          <div className="p-6">
-            <p className="text-gray-800 text-lg leading-relaxed whitespace-pre-wrap">
-              {questao.enunciado}
-            </p>
-          </div>
-
-          {/* Alternativas */}
-          <div className="px-6 pb-6 space-y-3">
-            {alternativas.map((alt) => {
-              const selecionada = respostaSelecionada === alt.letra
-              const correta = questao.resposta_correta === alt.letra
-              
-              let estilo = 'border-gray-200 hover:border-blue-400 hover:bg-blue-50'
-              
-              if (respostaConfirmada) {
-                if (correta) {
-                  estilo = 'border-green-500 bg-green-50'
-                } else if (selecionada && !correta) {
-                  estilo = 'border-red-500 bg-red-50'
-                } else {
-                  estilo = 'border-gray-200 opacity-60'
-                }
-              } else if (selecionada) {
-                estilo = 'border-blue-500 bg-blue-50'
-              }
-
-              return (
-                <button
-                  key={alt.letra}
-                  onClick={() => handleSelecionarResposta(alt.letra)}
-                  disabled={respostaConfirmada}
-                  className={`w-full flex items-start gap-4 p-4 border-2 rounded-xl transition-all text-left ${estilo}`}
-                >
-                  <span className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 font-bold text-sm ${
-                    respostaConfirmada && correta
-                      ? 'bg-green-500 text-white'
-                      : respostaConfirmada && selecionada && !correta
-                        ? 'bg-red-500 text-white'
-                        : selecionada
-                          ? 'bg-blue-500 text-white'
-                          : 'bg-gray-100 text-gray-600'
-                  }`}>
-                    {respostaConfirmada && correta ? (
-                      <CheckCircle className="w-5 h-5" />
-                    ) : respostaConfirmada && selecionada && !correta ? (
-                      <XCircle className="w-5 h-5" />
-                    ) : (
-                      alt.letra
-                    )}
-                  </span>
-                  <span className="text-gray-700 pt-1">{alt.texto}</span>
-                </button>
-              )
-            })}
-          </div>
-
-          {/* Explicação (após confirmar) */}
-          {respostaConfirmada && questao.explicacao && (
-            <div className="px-6 pb-6">
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                <h4 className="font-semibold text-blue-800 mb-2">💡 Explicação:</h4>
-                <p className="text-blue-700 text-sm whitespace-pre-wrap">{questao.explicacao}</p>
+        {/* Conteúdo */}
+        <div className="bg-white rounded-2xl p-6 border border-gray-100 mb-6">
+          {tab === 'teoria' && (
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <BookOpen className="w-6 h-6 text-blue-500" />
+                {aula.titulo}
+              </h2>
+              <div className="prose max-w-none">
+                <pre className="whitespace-pre-wrap font-sans text-gray-700 leading-relaxed bg-transparent p-0 m-0 overflow-visible">
+                  {aula.conteudo_teoria || 'Conteúdo em breve...'}
+                </pre>
               </div>
             </div>
           )}
-        </div>
 
-        {/* Navegação */}
-        <div className="flex items-center justify-between">
-          <button
-            onClick={handleQuestaoAnterior}
-            disabled={questaoAtual === 0}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-colors ${
-              questaoAtual === 0
-                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                : 'bg-white text-gray-700 hover:bg-gray-50 shadow-sm'
-            }`}
-          >
-            <ChevronLeft className="w-5 h-5" />
-            Anterior
-          </button>
-
-          {!respostaConfirmada ? (
-            <button
-              onClick={handleConfirmarResposta}
-              disabled={!respostaSelecionada}
-              className={`px-8 py-3 rounded-xl font-semibold transition-colors ${
-                respostaSelecionada
-                  ? `bg-gradient-to-r ${config.cor} text-white hover:opacity-90`
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-              }`}
-            >
-              Confirmar
-            </button>
-          ) : (
-            <button
-              onClick={handleProximaQuestao}
-              className={`flex items-center gap-2 px-8 py-3 bg-gradient-to-r ${config.cor} text-white rounded-xl font-semibold hover:opacity-90 transition-colors`}
-            >
-              {questaoAtual < questoes.length - 1 ? 'Próxima' : 'Ver Resultado'}
-              <ChevronRight className="w-5 h-5" />
-            </button>
+          {tab === 'formulas' && (
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <Calculator className="w-6 h-6 text-purple-500" />
+                Fórmulas
+              </h2>
+              <div className="prose max-w-none">
+                <pre className="whitespace-pre-wrap font-sans text-gray-700 leading-relaxed bg-gray-50 p-4 rounded-xl">
+                  {aula.formulas || 'Fórmulas em breve...'}
+                </pre>
+              </div>
+            </div>
           )}
 
-          <button
-            onClick={() => setModoResultado(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-white text-gray-700 rounded-xl hover:bg-gray-50 shadow-sm transition-colors"
-          >
-            Finalizar
-          </button>
+          {tab === 'dicas' && (
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <Lightbulb className="w-6 h-6 text-yellow-500" />
+                Dicas e Macetes
+              </h2>
+              <div className="prose max-w-none">
+                <pre className="whitespace-pre-wrap font-sans text-gray-700 leading-relaxed bg-yellow-50 p-4 rounded-xl">
+                  {aula.dicas || 'Dicas em breve...'}
+                </pre>
+              </div>
+            </div>
+          )}
+
+          {tab === 'exercicios' && (
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <Target className="w-6 h-6 text-green-500" />
+                Pratique Exercícios
+              </h2>
+              <p className="text-gray-600 mb-6">
+                Complete cada nível com 70% de acertos para liberar o próximo!
+              </p>
+
+              {/* 3 Blocos de Exercícios */}
+              <div className="space-y-4">
+                
+                {/* Bloco FÁCIL - Sempre liberado */}
+                <Link
+                  href={`/plataforma/enem/modulo/${moduloId}/aula/${aulaId}/exercicios/facil`}
+                  className="block bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-200 rounded-xl p-5 hover:border-green-400 hover:shadow-md transition-all"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-14 h-14 bg-green-500 rounded-xl flex items-center justify-center">
+                        <span className="text-2xl">🟢</span>
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-green-800 text-lg">Nível Fácil</h3>
+                        <p className="text-green-600 text-sm">{contagemQuestoes.facil} questões</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      {progressoExercicios.facil.total > 0 ? (
+                        <div>
+                          <p className={`text-2xl font-bold ${progressoExercicios.facil.percentual >= 70 ? 'text-green-600' : 'text-orange-500'}`}>
+                            {progressoExercicios.facil.percentual.toFixed(0)}%
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {progressoExercicios.facil.acertos}/{progressoExercicios.facil.total} acertos
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
+                          <Play className="w-6 h-6 text-white" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {progressoExercicios.facil.total > 0 && (
+                    <div className="mt-3">
+                      <div className="h-2 bg-green-100 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full transition-all ${progressoExercicios.facil.percentual >= 70 ? 'bg-green-500' : 'bg-orange-400'}`}
+                          style={{ width: `${progressoExercicios.facil.percentual}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </Link>
+
+                {/* Bloco MÉDIO */}
+                {medioLiberado ? (
+                  <Link
+                    href={`/plataforma/enem/modulo/${moduloId}/aula/${aulaId}/exercicios/medio`}
+                    className="block bg-gradient-to-r from-yellow-50 to-amber-50 border-2 border-yellow-200 rounded-xl p-5 hover:border-yellow-400 hover:shadow-md transition-all"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 bg-yellow-500 rounded-xl flex items-center justify-center">
+                          <span className="text-2xl">🟡</span>
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-yellow-800 text-lg">Nível Médio</h3>
+                          <p className="text-yellow-600 text-sm">{contagemQuestoes.medio} questões</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        {progressoExercicios.medio.total > 0 ? (
+                          <div>
+                            <p className={`text-2xl font-bold ${progressoExercicios.medio.percentual >= 70 ? 'text-green-600' : 'text-orange-500'}`}>
+                              {progressoExercicios.medio.percentual.toFixed(0)}%
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {progressoExercicios.medio.acertos}/{progressoExercicios.medio.total} acertos
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="w-12 h-12 bg-yellow-500 rounded-full flex items-center justify-center">
+                            <Play className="w-6 h-6 text-white" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {progressoExercicios.medio.total > 0 && (
+                      <div className="mt-3">
+                        <div className="h-2 bg-yellow-100 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full rounded-full transition-all ${progressoExercicios.medio.percentual >= 70 ? 'bg-green-500' : 'bg-orange-400'}`}
+                            style={{ width: `${progressoExercicios.medio.percentual}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </Link>
+                ) : (
+                  <div className="bg-gray-100 border-2 border-dashed border-gray-300 rounded-xl p-5 opacity-60">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 bg-gray-300 rounded-xl flex items-center justify-center">
+                          <Lock className="w-7 h-7 text-gray-500" />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-gray-500 text-lg">Nível Médio</h3>
+                          <p className="text-gray-400 text-sm">Complete 70% do Fácil para liberar</p>
+                        </div>
+                      </div>
+                      <div className="text-gray-400">
+                        🔒
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Bloco DIFÍCIL */}
+                {dificilLiberado ? (
+                  <Link
+                    href={`/plataforma/enem/modulo/${moduloId}/aula/${aulaId}/exercicios/dificil`}
+                    className="block bg-gradient-to-r from-red-50 to-rose-50 border-2 border-red-200 rounded-xl p-5 hover:border-red-400 hover:shadow-md transition-all"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 bg-red-500 rounded-xl flex items-center justify-center">
+                          <span className="text-2xl">🔴</span>
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-red-800 text-lg">Nível Difícil</h3>
+                          <p className="text-red-600 text-sm">{contagemQuestoes.dificil} questões</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        {progressoExercicios.dificil.total > 0 ? (
+                          <div>
+                            <p className={`text-2xl font-bold ${progressoExercicios.dificil.percentual >= 70 ? 'text-green-600' : 'text-orange-500'}`}>
+                              {progressoExercicios.dificil.percentual.toFixed(0)}%
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {progressoExercicios.dificil.acertos}/{progressoExercicios.dificil.total} acertos
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="w-12 h-12 bg-red-500 rounded-full flex items-center justify-center">
+                            <Play className="w-6 h-6 text-white" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {progressoExercicios.dificil.total > 0 && (
+                      <div className="mt-3">
+                        <div className="h-2 bg-red-100 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full rounded-full transition-all ${progressoExercicios.dificil.percentual >= 70 ? 'bg-green-500' : 'bg-orange-400'}`}
+                            style={{ width: `${progressoExercicios.dificil.percentual}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </Link>
+                ) : (
+                  <div className="bg-gray-100 border-2 border-dashed border-gray-300 rounded-xl p-5 opacity-60">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 bg-gray-300 rounded-xl flex items-center justify-center">
+                          <Lock className="w-7 h-7 text-gray-500" />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-gray-500 text-lg">Nível Difícil</h3>
+                          <p className="text-gray-400 text-sm">Complete 70% do Médio para liberar</p>
+                        </div>
+                      </div>
+                      <div className="text-gray-400">
+                        🔒
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+              </div>
+
+              {/* Conquista ao completar tudo */}
+              {todosCompletos && (
+                <div className="mt-6 bg-gradient-to-r from-purple-500 to-indigo-600 rounded-xl p-6 text-white text-center">
+                  <Trophy className="w-12 h-12 mx-auto mb-2" />
+                  <h3 className="text-xl font-bold">🎉 Parabéns!</h3>
+                  <p className="text-purple-100">Você completou todos os exercícios desta aula!</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Indicadores de questões */}
-        <div className="mt-6 bg-white rounded-xl p-4 shadow-sm">
-          <div className="flex flex-wrap gap-2 justify-center">
-            {questoes.map((_, index) => {
-              const resposta = respostas[index]
-              const atual = index === questaoAtual
-              
-              return (
-                <button
-                  key={index}
-                  onClick={() => irParaQuestao(index)}
-                  className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-medium transition-all ${
-                    atual
-                      ? `bg-gradient-to-r ${config.cor} text-white ring-2 ring-offset-2`
-                      : resposta
-                        ? resposta.correta
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-red-100 text-red-700'
-                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                  }`}
-                >
-                  {index + 1}
-                </button>
-              )
-            })}
-          </div>
+        {/* Botão Concluir - só aparece se não estiver na aba de exercícios */}
+        {tab !== 'exercicios' && (
+          <>
+            {!concluida ? (
+              <button
+                onClick={marcarConcluida}
+                className={`w-full py-4 bg-gradient-to-r ${cor} text-white font-bold rounded-xl hover:opacity-90 transition-all flex items-center justify-center gap-2`}
+              >
+                <CheckCircle className="w-5 h-5" />
+                Marcar aula como concluída
+              </button>
+            ) : (
+              <div className="w-full py-4 bg-green-100 text-green-700 font-bold rounded-xl flex items-center justify-center gap-2">
+                <CheckCircle className="w-5 h-5" />
+                ✅ Aula concluída!
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Navegação */}
+        <div className="mt-4 flex justify-between">
+          <Link
+            href={`/plataforma/enem/modulo/${moduloId}`}
+            className="text-gray-500 hover:text-gray-700 flex items-center gap-1"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Voltar ao módulo
+          </Link>
         </div>
       </main>
     </div>
