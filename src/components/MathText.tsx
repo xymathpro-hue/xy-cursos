@@ -18,50 +18,50 @@ export default function MathText({ text, className = '' }: MathTextProps) {
     let processedText = text;
 
     // Substitui $$ ... $$ por blocos
-    processedText = processedText.replace(/\$\$([\s\S]*?)\$\$/g, (match, formula) => {
+    processedText = processedText.replace(/\$\$([\s\S]*?)\$\$/g, (_, formula) => {
       try {
         return `<div class="katex-block my-2">${katex.renderToString(formula.trim(), { 
           displayMode: true,
           throwOnError: false 
         })}</div>`;
       } catch {
-        return match;
+        return _;
       }
     });
 
     // Substitui $ ... $ por inline
-    processedText = processedText.replace(/\$([^\$]+?)\$/g, (match, formula) => {
+    processedText = processedText.replace(/\$([^\$]+?)\$/g, (_, formula) => {
       try {
         return katex.renderToString(formula.trim(), { 
           displayMode: false,
           throwOnError: false 
         });
       } catch {
-        return match;
+        return _;
       }
     });
 
     // Substitui \[ ... \] por blocos
-    processedText = processedText.replace(/\\\[([\s\S]*?)\\\]/g, (match, formula) => {
+    processedText = processedText.replace(/\\\[([\s\S]*?)\\\]/g, (_, formula) => {
       try {
         return `<div class="katex-block my-2">${katex.renderToString(formula.trim(), { 
           displayMode: true,
           throwOnError: false 
         })}</div>`;
       } catch {
-        return match;
+        return _;
       }
     });
 
     // Substitui \( ... \) por inline
-    processedText = processedText.replace(/\\\(([\s\S]*?)\\\)/g, (match, formula) => {
+    processedText = processedText.replace(/\\\(([\s\S]*?)\\\)/g, (_, formula) => {
       try {
         return katex.renderToString(formula.trim(), { 
           displayMode: false,
           throwOnError: false 
         });
       } catch {
-        return match;
+        return _;
       }
     });
 
