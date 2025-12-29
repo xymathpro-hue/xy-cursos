@@ -11,13 +11,12 @@ import {
   CheckCircle, 
   Lightbulb, 
   Calculator, 
-  FileText, 
   Clock,
   Play,
   Target,
-  Trophy,
-  Star
+  Trophy
 } from 'lucide-react'
+import MathText from '@/components/MathText'
 
 interface Aula {
   id: string
@@ -358,9 +357,7 @@ export default function AulaPage() {
                 {aula.titulo}
               </h2>
               <div className="prose max-w-none">
-                <pre className="whitespace-pre-wrap font-sans text-gray-700 leading-relaxed bg-transparent p-0 m-0 overflow-visible">
-                  {aula.conteudo_teoria || 'Conteúdo em breve...'}
-                </pre>
+                <MathText text={aula.conteudo_teoria || 'Conteúdo em breve...'} className="text-gray-700 leading-relaxed whitespace-pre-wrap" />
               </div>
             </div>
           )}
@@ -371,10 +368,8 @@ export default function AulaPage() {
                 <Calculator className="w-6 h-6 text-purple-500" />
                 Fórmulas
               </h2>
-              <div className="prose max-w-none">
-                <pre className="whitespace-pre-wrap font-sans text-gray-700 leading-relaxed bg-gray-50 p-4 rounded-xl">
-                  {aula.formulas || 'Fórmulas em breve...'}
-                </pre>
+              <div className="bg-gray-50 p-4 rounded-xl">
+                <MathText text={aula.formulas || 'Fórmulas em breve...'} className="text-gray-700 leading-relaxed whitespace-pre-wrap" />
               </div>
             </div>
           )}
@@ -385,10 +380,8 @@ export default function AulaPage() {
                 <Lightbulb className="w-6 h-6 text-yellow-500" />
                 Dicas e Macetes
               </h2>
-              <div className="prose max-w-none">
-                <pre className="whitespace-pre-wrap font-sans text-gray-700 leading-relaxed bg-yellow-50 p-4 rounded-xl">
-                  {aula.dicas || 'Dicas em breve...'}
-                </pre>
+              <div className="bg-yellow-50 p-4 rounded-xl">
+                <MathText text={aula.dicas || 'Dicas em breve...'} className="text-gray-700 leading-relaxed whitespace-pre-wrap" />
               </div>
             </div>
           )}
@@ -405,7 +398,7 @@ export default function AulaPage() {
               </p>
 
               <div className="space-y-4">
-                {blocos.map((bloco, index) => {
+                {blocos.map((bloco) => {
                   const liberado = isNivelLiberado(bloco.dificuldade)
                   const progresso = progressoExercicios[bloco.dificuldade]
                   const totalQuestoes = questoesPorDificuldade[bloco.dificuldade] || 0
